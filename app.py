@@ -30,6 +30,18 @@ from sar.users import (get_user_by_id, authenticate, create_user, get_all_users,
                         get_gp_users, set_password, delete_user, users_file_exists,
                         get_user_by_username, UsersFileCorrupt)
 from sar.fsutil import atomic_write_json, unique_path
+from sar.audit import log_event as _audit_event, read_events as _audit_read, known_actions as _audit_actions
+
+_SERVER_STARTED = datetime.now(timezone.utc)
+
+def _audit(action, target="", detail=""):
+    """Audit an action by the current request's user."""
+    u = getattr(g, "current_user", None)
+    _audit_event(action,
+                 user_id=u.id if u else "",
+                 username=u.username if u else "",
+                 target=target, detail=detail,
+                 ip=request.remote_addr or "")
 from sar.report_templates import (get_all_templates, get_template, save_custom_template,
                                     delete_custom_template)
 from sar.report_store import save_report, load_report, load_all_reports, delete_report
@@ -88,9 +100,17 @@ def format_date(value):
 
 # Jobs
 _job_queues: dict[str, Queue] = {}
+_job_created: dict[str, float] = {}
+_JOB_TTL_S = 2 * 3600
 def _new_job():
     import uuid as _u
-    jid = str(_u.uuid4())[:12]; q = Queue(); _job_queues[jid] = q; return jid, q
+    # Purge stale queues whose client never attached/disconnected (leak guard)
+    now = time.time()
+    for stale in [j for j, t in _job_created.items() if now - t > _JOB_TTL_S]:
+        _job_queues.pop(stale, None); _job_created.pop(stale, None)
+    jid = str(_u.uuid4())[:12]; q = Queue()
+    _job_queues[jid] = q; _job_created[jid] = now
+    return jid, q
 def _emit(q, progress, step):
     q.put({"progress": round(progress, 3), "step": step})
 
@@ -351,7 +371,7 @@ def load_user():
         log.error("users.json is corrupt — refusing to serve requests")
         return ("User database is corrupt or unreadable. Restore data/users.json "
                 "from backup, then restart the server."), 500
-    if no_users and request.endpoint not in {"login","setup","static"}:
+    if no_users and request.endpoint not in {"login","setup","static","healthz"}:
         return redirect(url_for("setup"))
 @app.context_processor
 def inject_user(): return {"current_user": g.current_user}
@@ -455,13 +475,17 @@ def login():
             _login_clear(ip,un)
             session["user_id"]=u.id
             log.info("Login: %s from %s", un, ip)
+            _audit_event("login", user_id=u.id, username=u.username, ip=ip)
             return redirect(url_for("dashboard"))
         _login_record_failure(ip,un)
         log.warning("Failed login for %r from %s", un, ip)
+        _audit_event("login_failed", username=un, ip=ip)
         error="Invalid username or password."
     return render_template("login.html",error=error)
 @app.route("/logout",methods=["POST"])
-def logout(): session.pop("user_id",None); return redirect(url_for("login"))
+def logout():
+    _audit("logout")
+    session.pop("user_id",None); return redirect(url_for("login"))
 @app.route("/setup",methods=["GET","POST"])
 def setup():
     if users_file_exists(): return redirect(url_for("login"))
@@ -506,19 +530,23 @@ def admin_create_user():
     if errors:
         users=[{"id":u.id,"username":u.username,"display_name":u.display_name,"role":u.role,"is_superuser":u.is_superuser} for u in get_all_users()]
         return render_template("admin/users.html",users=users,errors=errors)
-    create_user(un,dn,role,pw,su); return redirect(url_for("admin_users"))
+    create_user(un,dn,role,pw,su)
+    _audit("user_created", target=un, detail=role)
+    return redirect(url_for("admin_users"))
 @app.route("/admin/users/<uid>/reset-password",methods=["POST"])
 @require_admin
 def admin_reset_password(uid):
     pw=( request.json or {}).get("new_password","")
     if len(pw)<8: return jsonify({"error":"Password must be at least 8 characters."}),400
     if not set_password(uid,pw): return jsonify({"error":"User not found."}),404
+    _audit("user_password_reset", target=uid)
     return jsonify({"ok":True})
 @app.route("/admin/users/<uid>/delete",methods=["POST"])
 @require_admin
 def admin_delete_user(uid):
     if uid==g.current_user.id: return jsonify({"error":"Cannot delete your own account."}),400
     if not delete_user(uid): return jsonify({"error":"User not found."}),404
+    _audit("user_deleted", target=uid)
     return redirect(url_for("admin_users"))
 
 # Page routes
@@ -557,6 +585,7 @@ def new_sar_page(): return render_template("index.html")
 def review(sid):
     sar=_get(sid)
     if not sar: return "SAR not found",404
+    _audit("sar_viewed", target=sid, detail=sar.subject.full_name)
     def fi(bn):
         full=next((p for p in sar.pdf_files if os.path.basename(p)==bn),None)
         return {"name":bn,"pages":get_page_count(full) if full else 1,"date":sar.document_dates.get(bn)}
@@ -590,7 +619,8 @@ def job_stream(jid):
             try: ev=q.get(timeout=60)
             except Empty: yield ": keepalive\n\n"; continue
             yield f"data: {json.dumps(ev)}\n\n"
-            if ev.get("done") or ev.get("error"): _job_queues.pop(jid,None); break
+            if ev.get("done") or ev.get("error"):
+                _job_queues.pop(jid,None); _job_created.pop(jid,None); break
     return Response(gen(),mimetype="text/event-stream",
                     headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
@@ -652,6 +682,7 @@ def create_sar():
                    "flagged":sum(1 for c in ac if c.status==RedactionStatus.FLAGGED)})
         except Exception as e: q.put({"error":str(e)})
     threading.Thread(target=_proc,daemon=True).start()
+    _audit("sar_created", target=sar.id, detail=subj.full_name)
     return jsonify({"job_id":jid})
 
 # Candidate API
@@ -714,7 +745,9 @@ def update_candidate(sid,cid):
                 except ValueError: return jsonify({"error":"Invalid status"}),400
             if "exemption_code" in data: c.exemption_code=data["exemption_code"]
             break
-    _save(sar); return jsonify({"ok":True})
+    _save(sar)
+    _audit("candidate_updated", target=sid, detail=f"{cid}:{data.get('status','')}")
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/batch-update",methods=["POST"])
 @require_login
 def batch_update(sid):
@@ -725,7 +758,9 @@ def batch_update(sid):
     try: st=RedactionStatus(data.get("status",""))
     except Exception: return jsonify({"error":"Invalid status"}),400
     n=sum(1 for c in sar.candidates if c.id in ids and (setattr(c,"status",st) or True))
-    _save(sar); return jsonify({"ok":True,"updated":n})
+    _save(sar)
+    _audit("candidates_batch_updated", target=sid, detail=f"{n} -> {st.value}")
+    return jsonify({"ok":True,"updated":n})
 @app.route("/api/sar/<sid>/batch-by-text",methods=["POST"])
 @require_login
 def batch_by_text(sid):
@@ -737,7 +772,9 @@ def batch_by_text(sid):
     n=0
     for c in sar.candidates:
         if c.text.strip().lower()==txt: c.status=st; n+=1
-    _save(sar); return jsonify({"ok":True,"updated":n})
+    _save(sar)
+    _audit("candidates_batch_by_text", target=sid, detail=f"{n} -> {st.value}")
+    return jsonify({"ok":True,"updated":n})
 @app.route("/api/sar/<sid>/detection-settings",methods=["GET"])
 @require_admin
 def get_detection_settings(sid):
@@ -798,6 +835,8 @@ def finalise_sar(sid):
                              "page_num":c.page_num,"category":c.category.value}
                             for c in failed]
     _save(sar)
+    _audit("sar_finalised", target=sid,
+           detail=f"{len(rf)} files, {len(failed)} failed redactions")
     if failed:
         log.warning("SAR %s finalised with %d unplaced redactions", sid, len(failed))
     return jsonify({"redacted_files":rf,"log_file":os.path.basename(lp),
@@ -815,6 +854,7 @@ def list_outputs(sid):
 def download_file(sid,filename):
     fp=os.path.join(OUTPUT_DIR,sid,secure_filename(filename))
     if not os.path.exists(fp): return "File not found",404
+    _audit("output_downloaded", target=sid, detail=secure_filename(filename))
     return send_file(fp,as_attachment=True)
 @app.route("/api/sar/<sid>/download-all")
 @require_login
@@ -828,6 +868,7 @@ def download_all(sid):
             fp=os.path.join(od,fn)
             if os.path.isfile(fp): zf.write(fp,fn)
     buf.seek(0)
+    _audit("output_downloaded_all", target=sid)
     return send_file(buf,mimetype="application/zip",as_attachment=True,download_name=f"{secure_filename(sn) or sid}_redacted.zip")
 @app.route("/api/sar/<sid>/export")
 @require_login
@@ -844,6 +885,7 @@ def export_sar(sid):
         for pp in sar.pdf_files:
             if os.path.exists(pp): zf.write(pp,f"pdfs/{os.path.basename(pp)}")
     buf.seek(0)
+    _audit("sar_exported", target=sid, detail=sar.subject.full_name)
     return send_file(buf,mimetype="application/zip",as_attachment=True,
                      download_name=secure_filename(f"SAR_{sar.subject.full_name or sar.id}_{sar.id}.sarpack").replace(" ","_"))
 @app.route("/api/sar/import",methods=["POST"])
@@ -863,7 +905,9 @@ def import_sar():
         ex=_get(sid2)
         return jsonify({"conflict":True,"sar_id":sid2,"existing_modified":ex.last_modified,
                         "import_modified":sd.get("last_modified"),"subject_name":sd.get("subject",{}).get("full_name","")})
-    buf.seek(0); _do_import(buf,sd); return jsonify({"ok":True,"sar_id":sid2})
+    buf.seek(0); _do_import(buf,sd)
+    _audit("sar_imported", target=sid2 or "", detail=sd.get("subject",{}).get("full_name",""))
+    return jsonify({"ok":True,"sar_id":sid2})
 @app.route("/api/sar/import/force",methods=["POST"])
 @require_admin
 def import_sar_force():
@@ -911,13 +955,17 @@ def delete_sar(sid):
         if os.path.isdir(d): shutil.rmtree(d)
     jp=os.path.join(SAR_DATA_DIR,f"{sid}.json")
     if os.path.exists(jp): os.remove(jp)
-    _del(sid); return jsonify({"ok":True})
+    _del(sid)
+    _audit("sar_deleted", target=sid, detail=sar.subject.full_name)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/archive",methods=["POST"])
 @require_admin
 def archive_sar(sid):
     sar=_get(sid)
     if not sar: return jsonify({"error":"Not found"}),404
-    sar.archived=True; _save(sar); return jsonify({"ok":True})
+    sar.archived=True; _save(sar)
+    _audit("sar_archived", target=sid)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/unarchive",methods=["POST"])
 @require_admin
 def unarchive_sar(sid):
@@ -942,7 +990,9 @@ def delete_page(sid):
     sar.candidates=[c for c in sar.candidates if not (c.source_file==fn and c.page_num==pn)]
     for c in sar.candidates:
         if c.source_file==fn and c.page_num>pn: c.page_num-=1
-    _save(sar); return jsonify({"ok":True,"new_page_count":npc})
+    _save(sar)
+    _audit("page_deleted", target=sid, detail=f"{fn} p{pn+1}")
+    return jsonify({"ok":True,"new_page_count":npc})
 @app.route("/api/sar/<sid>/notes",methods=["GET"])
 @require_login
 def get_notes(sid):
@@ -1046,7 +1096,9 @@ def allocate_sar(sid):
         gp=get_user_by_id(gid)
         if not gp: return jsonify({"error":"User not found"}),404
         sar.allocated_to=gp.id; sar.allocated_to_name=gp.display_name; sar.workflow_status="in_review"
-    _save(sar); return jsonify({"ok":True,"workflow_status":sar.workflow_status})
+    _save(sar)
+    _audit("sar_allocated", target=sid, detail=sar.allocated_to_name or "(unassigned)")
+    return jsonify({"ok":True,"workflow_status":sar.workflow_status})
 @app.route("/api/sar/<sid>/workflow",methods=["POST"])
 @require_login
 def update_workflow(sid):
@@ -1073,6 +1125,7 @@ def new_report_page(): return render_template("reports_new.html",templates=get_a
 def report_review(rid):
     rep=load_report(rid)
     if not rep: return "Report not found",404
+    _audit("report_viewed", target=rid, detail=rep.get("patient",{}).get("full_name",""))
     tpl=get_template(rep["template_id"])
     fi=[{"name":os.path.basename(f),"pages":get_page_count(f),"date":rep.get("document_dates",{}).get(os.path.basename(f))}
         for f in rep.get("pdf_files",[]) if os.path.exists(f)]
@@ -1127,6 +1180,7 @@ def create_report():
             save_report(rd2); jq.put({"done":True,"report_id":rid,"total_questions":len(ans)})
         except Exception as e: jq.put({"error":str(e)})
     threading.Thread(target=_proc,daemon=True).start()
+    _audit("report_created", target=rid, detail=f"{tpl['name']} — {pat['full_name']}")
     return jsonify({"job_id":jid})
 @app.route("/api/reports/<rid>/answer",methods=["POST"])
 @require_login
@@ -1164,12 +1218,15 @@ def generate_report(rid):
     rep=load_report(rid)
     if not rep: return jsonify({"error":"Not found"}),404
     op=generate_report_pdf(rep,os.path.join(REPORT_OUTPUT_DIR,rid))
-    rep["status"]="complete"; save_report(rep); return jsonify({"ok":True,"filename":os.path.basename(op)})
+    rep["status"]="complete"; save_report(rep)
+    _audit("report_generated", target=rid)
+    return jsonify({"ok":True,"filename":os.path.basename(op)})
 @app.route("/api/reports/<rid>/download/<filename>")
 @require_login
 def download_report(rid,filename):
     fp=os.path.join(REPORT_OUTPUT_DIR,rid,secure_filename(filename))
     if not os.path.exists(fp): return "File not found",404
+    _audit("report_downloaded", target=rid, detail=secure_filename(filename))
     return send_file(fp,as_attachment=True)
 @app.route("/api/reports/<rid>/page-image/<filename>/<int:pn>")
 @require_login
@@ -1226,6 +1283,65 @@ def save_practice_config_route():
 @require_login
 def update_check():
     return jsonify(_get_update_result())
+
+# ── Audit trail & operational endpoints ────────────────────────────────────
+@app.route("/admin/audit")
+@require_admin
+def admin_audit():
+    action=request.args.get("action","").strip()
+    username=request.args.get("username","").strip()
+    target=request.args.get("target","").strip()
+    events=_audit_read(limit=500,action=action,username=username,target=target)
+    return render_template("admin/audit.html",events=events,actions=_audit_actions(),
+                           f_action=action,f_username=username,f_target=target)
+
+@app.route("/admin/audit.csv")
+@require_admin
+def admin_audit_csv():
+    import csv
+    events=_audit_read(limit=10000,
+                       action=request.args.get("action","").strip(),
+                       username=request.args.get("username","").strip(),
+                       target=request.args.get("target","").strip())
+    buf=io.StringIO()
+    w=csv.writer(buf)
+    w.writerow(["timestamp","action","username","user_id","target","detail","ip"])
+    for e in events:
+        w.writerow([e.get("ts",""),e.get("action",""),e.get("username",""),
+                    e.get("user_id",""),e.get("target",""),e.get("detail",""),e.get("ip","")])
+    _audit("audit_exported", detail=f"{len(events)} events")
+    return Response(buf.getvalue(),mimetype="text/csv",
+                    headers={"Content-Disposition":"attachment; filename=audit_log.csv"})
+
+@app.route("/healthz")
+def healthz():
+    """Unauthenticated liveness probe for LAN monitoring."""
+    return jsonify({"ok":True,"version":APP_VERSION})
+
+@app.route("/admin/status")
+@require_admin
+def admin_status():
+    du=shutil.disk_usage(str(BASE_DIR))
+    def _dir_size(p):
+        total=0
+        for root,_,files in os.walk(p):
+            for f in files:
+                try: total+=os.path.getsize(os.path.join(root,f))
+                except OSError: pass
+        return total
+    uptime=datetime.now(timezone.utc)-_SERVER_STARTED
+    return jsonify({
+        "version":APP_VERSION,
+        "started":_SERVER_STARTED.isoformat(),
+        "uptime_seconds":int(uptime.total_seconds()),
+        "active_sars":sum(1 for s in _all() if not getattr(s,"archived",False)),
+        "archived_sars":sum(1 for s in _all() if getattr(s,"archived",False)),
+        "disk_free_gb":round(du.free/1e9,2),
+        "disk_total_gb":round(du.total/1e9,2),
+        "data_dir_mb":round(_dir_size(str(BASE_DIR/"data"))/1e6,1),
+        "uploads_dir_mb":round(_dir_size(UPLOAD_DIR)/1e6,1),
+        "pending_jobs":len(_job_queues),
+    })
 
 @app.errorhandler(403)
 def forbidden(e): return render_template("403.html"),403

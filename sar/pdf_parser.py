@@ -1,6 +1,47 @@
+import hashlib
 import os
+import tempfile
+import threading
 import fitz  # PyMuPDF
 from sar.models import TextSpan
+
+# ── Rendered-page cache ──────────────────────────────────────────────────────
+# Page PNGs are cached on disk keyed by (path, mtime, page, zoom). Re-renders
+# (and OCR re-runs on scanned pages) are the dominant cost when several
+# reviewers page through the same record on a shared server. Keys include the
+# file mtime, so editing a document (e.g. page deletion) invalidates naturally.
+_PAGE_CACHE_DIR = str(__import__("pathlib").Path(__file__).resolve().parent.parent
+                      / "data" / "cache" / "pages")
+_PAGE_CACHE_MAX_FILES = 4000   # prune oldest beyond this
+_page_cache_lock = threading.Lock()
+
+# In-memory page-count cache: {abspath: (mtime, count)}
+_page_count_cache: dict[str, tuple[float, int]] = {}
+
+
+def _page_cache_key(pdf_path: str, page_num: int, zoom: float) -> str:
+    try:
+        mtime = os.path.getmtime(pdf_path)
+    except OSError:
+        mtime = 0
+    raw = f"{os.path.abspath(pdf_path)}|{mtime}|{page_num}|{zoom}"
+    return hashlib.sha1(raw.encode()).hexdigest()
+
+
+def _page_cache_prune():
+    try:
+        files = [(os.path.getmtime(os.path.join(_PAGE_CACHE_DIR, f)), f)
+                 for f in os.listdir(_PAGE_CACHE_DIR)]
+    except OSError:
+        return
+    if len(files) <= _PAGE_CACHE_MAX_FILES:
+        return
+    files.sort()
+    for _, f in files[:len(files) - _PAGE_CACHE_MAX_FILES + 500]:
+        try:
+            os.remove(os.path.join(_PAGE_CACHE_DIR, f))
+        except OSError:
+            pass
 
 # Ensure Tesseract can find its data files on Windows (set before first OCR call)
 if not os.environ.get("TESSDATA_PREFIX"):
@@ -116,20 +157,51 @@ def render_page_image(pdf_path: str, page_num: int, zoom: float = 2.0) -> bytes:
     """
     Render a PDF page to PNG bytes for display in the review UI.
     zoom=2.0 gives 144 DPI (2x the default 72 DPI).
+    Results are cached on disk (see _PAGE_CACHE_DIR).
     """
+    key = _page_cache_key(pdf_path, page_num, zoom)
+    cache_path = os.path.join(_PAGE_CACHE_DIR, f"{key}.png")
+    try:
+        with open(cache_path, "rb") as f:
+            return f.read()
+    except OSError:
+        pass
+
     doc = fitz.open(pdf_path)
     page = doc[page_num]
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat)
     img_bytes = pix.tobytes("png")
     doc.close()
+
+    try:
+        os.makedirs(_PAGE_CACHE_DIR, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=_PAGE_CACHE_DIR, suffix=".tmp")
+        with os.fdopen(fd, "wb") as f:
+            f.write(img_bytes)
+        os.replace(tmp, cache_path)
+        with _page_cache_lock:
+            _page_cache_prune()
+    except OSError:
+        pass  # cache failure must never break rendering
+
     return img_bytes
 
 
 def get_page_count(pdf_path: str) -> int:
+    apath = os.path.abspath(pdf_path)
+    try:
+        mtime = os.path.getmtime(apath)
+        cached = _page_count_cache.get(apath)
+        if cached and cached[0] == mtime:
+            return cached[1]
+    except OSError:
+        mtime = None
     doc = fitz.open(pdf_path)
     count = len(doc)
     doc.close()
+    if mtime is not None:
+        _page_count_cache[apath] = (mtime, count)
     return count
 
 

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Audit Trail — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px;">
+  <div>
+    <h1>Audit Trail</h1>
+    <div class="heading-rule"></div>
+  </div>
+  <a class="btn btn-ghost" href="/admin/audit.csv?action={{ f_action }}&username={{ f_username }}&target={{ f_target }}">↓ Export CSV</a>
+</div>
+
+<form method="GET" action="/admin/audit" style="display:flex;gap:10px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;">
+  <div class="form-group">
+    <label>Action</label>
+    <select name="action">
+      <option value="">All actions</option>
+      {% for a in actions %}
+      <option value="{{ a }}" {% if a == f_action %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>User</label>
+    <input type="text" name="username" value="{{ f_username }}" placeholder="username">
+  </div>
+  <div class="form-group">
+    <label>Target (SAR / report ID)</label>
+    <input type="text" name="target" value="{{ f_target }}" placeholder="id">
+  </div>
+  <button type="submit" class="btn btn-primary">Filter</button>
+  {% if f_action or f_username or f_target %}
+  <a href="/admin/audit" class="btn btn-ghost">Clear</a>
+  {% endif %}
+</form>
+
+{% if not events %}
+<div style="color:var(--t4);font-size:13px;padding:24px 0;">No audit events recorded yet.</div>
+{% else %}
+<div style="font-size:11px;color:var(--t4);margin-bottom:8px;">Showing {{ events|length }} most recent event{{ 's' if events|length != 1 }}</div>
+<table style="width:100%;border-collapse:collapse;font-size:12px;">
+  <thead>
+    <tr style="text-align:left;color:var(--t4);border-bottom:1px solid var(--border);">
+      <th style="padding:6px 10px 6px 0;">Time (UTC)</th>
+      <th style="padding:6px 10px;">Action</th>
+      <th style="padding:6px 10px;">User</th>
+      <th style="padding:6px 10px;">Target</th>
+      <th style="padding:6px 10px;">Detail</th>
+      <th style="padding:6px 0 6px 10px;">IP</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:6px 10px 6px 0;white-space:nowrap;color:var(--t3);">{{ e.ts[:19]|replace('T',' ') }}</td>
+      <td style="padding:6px 10px;"><span class="pill" style="font-size:10px;">{{ e.action }}</span></td>
+      <td style="padding:6px 10px;">{{ e.username or '—' }}</td>
+      <td style="padding:6px 10px;font-family:monospace;font-size:11px;">{{ e.target or '—' }}</td>
+      <td style="padding:6px 10px;color:var(--t3);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ e.detail or '' }}</td>
+      <td style="padding:6px 0 6px 10px;color:var(--t4);">{{ e.ip or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

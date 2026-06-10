@@ -20,7 +20,8 @@
       <a href="/reports" {% if request.path.startswith('/reports') %}class="active"{% endif %}>Reports</a>
       <a href="/staff" {% if request.path == '/staff' %}class="active"{% endif %}>Settings</a>
       {% if current_user and current_user.role == 'admin' %}
-      <a href="/admin/users" {% if request.path.startswith('/admin') %}class="active"{% endif %}>Users</a>
+      <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>Users</a>
+      <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}>Audit</a>
       {% endif %}
       <a href="/help" {% if request.path == '/help' %}class="active"{% endif %}>Help</a>
     </div>

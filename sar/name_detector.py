@@ -86,10 +86,26 @@ UK_LAST_NAMES = {
     "saunders","lloyd","berry","douglas","rowe","hamilton","gardner",
     "nicholson","knight","long","holt","higgins","newton","miles",
     "mccoy","mackenzie","mcbride","mcintyre","mckenzie","mclean",
-    "overington","azadian","klepacka","triska","galloway","scholar",
-    "thomason","sherrington","guerriero","nicholls","rayman","larder",
-    "constantine","cockayne","moulds","geraint","campbell","davies",
+    "mcdonald","macdonald","o'brien","o'connor","o'neill","o'sullivan",
+    "galloway","nicholls","constantine","campbell","davies",
 }
+
+# Per-practice supplementary surnames (local staff/community names that boost
+# detection). Loaded once at startup from data/extra_surnames.json — a JSON
+# list of strings. Replaces the previous hard-coded practice-specific names.
+def _load_extra_surnames() -> set[str]:
+    import json, os
+    path = str(__import__("pathlib").Path(__file__).resolve().parent.parent
+               / "data" / "extra_surnames.json")
+    try:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return {str(n).strip().lower() for n in json.load(f) if str(n).strip()}
+    except Exception:
+        pass
+    return set()
+
+UK_LAST_NAMES |= _load_extra_surnames()
 
 # Titles that reliably precede names
 NAME_TITLES = {
@@ -132,28 +148,74 @@ NOT_NAMES = {
     # UK street suffixes (prevent "Roke Lane" being a name)
     "lane","road","street","avenue","close","drive","place","court","way",
     "terrace","gardens","grove","crescent","mews","rise","walk","row",
+    # Record header words (prevent "MEDICATION, Aspirin" style false positives
+    # from the surname-comma pattern)
+    "medication","medications","allergies","allergy","immunisation",
+    "immunisations","vaccination","vaccinations","diagnosis","diagnoses",
+    "pathology","radiology","haematology","biochemistry","microbiology",
+    "screening","referral","referrals","appointment","appointments",
+    "letter","letters","report","reports","telephone","urgent","routine",
+    "normal","abnormal","review","summary","alert","alerts","template",
+    "recall","smear","bloods","values","dob","nhs",
+}
+
+# Disease/anatomy words that follow eponyms — "Parkinson Disease",
+# "Barrett Oesophagus", "Colles Fracture" are not people.
+EPONYM_FOLLOWERS = {
+    "disease","syndrome","oesophagus","esophagus","contracture","palsy",
+    "fracture","tendon","sign","test","node","nodes","tube","tubes",
+    "canal","ligament","manoeuvre","maneuver","triangle","membrane",
+    "lymphoma","chorea","tremor",
 }
 
 
 # ─── Detection Patterns ───────────────────────────────────────────────────────
 
+# A single name token: Title-Case, with optional Mc/Mac/O'/De internal-capital
+# prefix so McDonald, MacKay, O'Brien, DeSouza all match.
+_NAME = r"(?:Mc|Mac|O'|De|Van)?[A-Z][a-z'\-]+"
+
 # Pattern 1: Title followed by optional initial and surname
-# Matches: Dr Smith, Mr J. Smith, Mrs Jane Smith, Prof. Williams
+# Matches: Dr Smith, Mr J. Smith, Mrs Jane Smith, Prof. Williams, Dr McDonald,
+# and ALL-CAPS after a title (Dr SMITH) — a title anchor is strong evidence.
 # NOTE: Use inline (?i:...) only for the title part so name parts stay case-sensitive.
 TITLE_NAME_PATTERN = re.compile(
     r'\b'
     r'((?i:Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?|Professor|Rev\.?|Reverend|'
     r'Sir|Lord|Lady|Nurse|Sister|Brother|Mx\.?))'
-    r'\s+'
-    r'(?:[A-Z]\.?\s+)?'          # Optional initial
-    r'([A-Z][a-z\'-]+)'          # First surname component (must be Title-Cased)
-    r'(?:\s+([A-Z][a-z\'-]+))?'  # Optional second name component (must be Title-Cased)
+    r'[ \t]+'
+    r'(?:[A-Z]\.?[ \t]+)?'                    # Optional initial
+    rf"({_NAME}|[A-Z][A-Z'\-]+)"              # First name component (Title-Case or CAPS)
+    rf"(?:[ \t]+({_NAME}|[A-Z][A-Z'\-]+))?"   # Optional second component (same line only)
     r'\b',
+)
+
+# Pattern 1b: "SURNAME, Forename" — the most common format in EMIS/SystmOne
+# headers, Docman filing and hospital letters: "SMITH, John", "Re: JONES, Mary",
+# "O'BRIEN, Siobhan". ALL-CAPS surname is required; a Title-Case word before a
+# comma is too ambiguous ("However, John").
+SURNAME_COMMA_PATTERN = re.compile(
+    r"\b([A-Z][A-Z'\-]+(?:[ \t][A-Z][A-Z'\-]+)?),[ \t]+"   # CAPS surname(s) + comma
+    rf"({_NAME}|[A-Z][A-Z'\-]+)"                            # Forename (Title-Case or CAPS)
+    rf"(?:[ \t]({_NAME}|[A-Z]\.?))?"                        # Optional middle name/initial
+    r'\b',
+)
+
+# Pattern 1c: Title-Case "Surname, Forename" — only accepted when the surname
+# is a known UK surname, to avoid "However, John" style false positives.
+TITLECASE_COMMA_PATTERN = re.compile(
+    rf"\b({_NAME}),[ \t]+({_NAME})\b",
+)
+
+# Pattern 1d: ALL-CAPS full name "JOHN SMITH" — accepted only when at least
+# one word is a known UK first/last name (filters "ACTIVE PROBLEMS" headers).
+ALLCAPS_NAME_PATTERN = re.compile(
+    r"\b([A-Z][A-Z'\-]{1,})[ \t]+([A-Z][A-Z'\-]{1,})\b",
 )
 
 # Pattern 2: "Dear [Title] [Name]" (letters)
 DEAR_PATTERN = re.compile(
-    r'\bDear\s+(?:Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?)?\s*([A-Z][a-z\'-]+(?:\s+[A-Z][a-z\'-]+)?)\b'
+    rf"\bDear\s+(?:Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?)?\s*({_NAME}(?:\s+{_NAME})?)\b"
 )
 
 # Pattern 3: Relational context — "patient's mother Sarah", "carer John"
@@ -164,13 +226,13 @@ RELATIONAL_PATTERN = re.compile(
     r'carer|guardian|parent|grandparent|grandmother|grandfather|uncle|aunt|'
     r'nephew|niece|friend|neighbour|next\s+of\s+kin|nok)\s+'
     r'(?i:is\s+|was\s+|called\s+|named\s+)?'
-    r'([A-Z][a-z\'-]+(?:\s+[A-Z][a-z\'-]+)?)\b',
+    rf"({_NAME}(?:\s+{_NAME})?)\b",
 )
 
 # Pattern 4: "Name (Relationship)" — e.g. "Adam Simpson (Husband)"
 # High confidence. Name must be at least two Title-Cased words on the same line.
 NAME_WITH_RELATION_PATTERN = re.compile(
-    r'\b([A-Z][a-z\'-]+(?:[ \t]+[A-Z][a-z\'-]+)+)[ \t]*\('
+    rf"\b({_NAME}(?:[ \t]+{_NAME})+)[ \t]*\("
     r'(?i:Husband|Wife|Partner|Mother|Father|Son|Daughter|Brother|Sister|'
     r'Uncle|Aunt|Nephew|Niece|Grandson|Granddaughter|Grandparent|'
     r'Grandfather|Grandmother|Guardian|Carer|Friend|Neighbour|'
@@ -183,7 +245,8 @@ NAME_WITH_RELATION_PATTERN = re.compile(
 # at least one of which is a known name) — lower confidence, used carefully.
 # Uses [ \t]+ to avoid crossing newlines.
 FULL_NAME_PATTERN = re.compile(
-    r'\b([A-Z][a-z\'-]{2,})(?:[ \t]+[A-Z]\.?[ \t]+|[ \t]+)([A-Z][a-z\'-]{2,})\b'
+    r"\b((?:Mc|Mac|O'|De|Van)?[A-Z][a-z'\-]{2,})(?:[ \t]+[A-Z]\.?[ \t]+|[ \t]+)"
+    r"((?:Mc|Mac|O'|De|Van)?[A-Z][a-z'\-]{2,})\b"
 )
 
 
@@ -223,6 +286,37 @@ def detect_names(text: str) -> list[NameMatch]:
                 return
         matches.append(m)
         seen_spans.append((m.start, m.end))
+
+    # Pattern 1b: "SURNAME, Forename" — record headers, Docman, hospital letters.
+    # Known forename → high confidence; unknown forename → flag for review.
+    for match in SURNAME_COMMA_PATTERN.finditer(text):
+        surname, forename = match.group(1), match.group(2)
+        if not _is_valid_name_word(surname) or not _is_valid_name_word(forename):
+            continue
+        known = (forename.lower() in UK_FIRST_NAMES or
+                 surname.lower() in UK_LAST_NAMES)
+        add_match(NameMatch(
+            text=match.group(0),
+            start=match.start(),
+            end=match.end(),
+            confidence=0.90 if known else 0.72,
+            reason="Surname-first record format (SURNAME, Forename)",
+        ))
+
+    # Pattern 1c: Title-Case "Surname, Forename" — requires a known surname
+    for match in TITLECASE_COMMA_PATTERN.finditer(text):
+        surname, forename = match.group(1), match.group(2)
+        if surname.lower() not in UK_LAST_NAMES:
+            continue
+        if not _is_valid_name_word(surname) or not _is_valid_name_word(forename):
+            continue
+        add_match(NameMatch(
+            text=match.group(0),
+            start=match.start(),
+            end=match.end(),
+            confidence=0.72,
+            reason="Surname-first format (known UK surname)",
+        ))
 
     # Pattern 1: Title + Name (highest confidence)
     for match in TITLE_NAME_PATTERN.finditer(text):
@@ -311,6 +405,10 @@ def detect_names(text: str) -> list[NameMatch]:
         if already_covered:
             continue
 
+        # Medical eponyms are not people: "Parkinson Disease", "Colles Fracture"
+        if word2 in EPONYM_FOLLOWERS:
+            continue
+
         # At least one word must be a known UK first or last name
         is_name = (
             word1 in UK_FIRST_NAMES or word1 in UK_LAST_NAMES or
@@ -328,6 +426,34 @@ def detect_names(text: str) -> list[NameMatch]:
             end=match.end(),
             confidence=0.65,
             reason="Full name (capitalised words, known name)",
+        ))
+
+    # Pattern 6: ALL-CAPS full name "JOHN SMITH" — needs a known UK name to
+    # avoid section headers ("ACTIVE PROBLEMS", "BLOOD PRESSURE")
+    for match in ALLCAPS_NAME_PATTERN.finditer(text):
+        word1 = match.group(1).lower()
+        word2 = match.group(2).lower()
+
+        already_covered = any(
+            match.start() < e and match.end() > s
+            for s, e in seen_spans
+        )
+        if already_covered:
+            continue
+        if word2 in EPONYM_FOLLOWERS:
+            continue
+        if not (word1 in UK_FIRST_NAMES or word1 in UK_LAST_NAMES or
+                word2 in UK_FIRST_NAMES or word2 in UK_LAST_NAMES):
+            continue
+        if not _is_valid_name_word(match.group(1)) or not _is_valid_name_word(match.group(2)):
+            continue
+
+        add_match(NameMatch(
+            text=match.group(0),
+            start=match.start(),
+            end=match.end(),
+            confidence=0.70,
+            reason="ALL-CAPS full name (known UK name)",
         ))
 
     return sorted(matches, key=lambda m: m.start)

@@ -7,7 +7,6 @@ from sar.models import (
 from sar.nhs_patterns import find_regex_matches
 from sar.staff_list import is_staff_name
 from sar.name_detector import detect_names
-from sar.pdf_parser import get_full_page_text
 from sar.custom_words import get_custom_words
 from sar.risk_words import check_text_for_risk
 
@@ -129,43 +128,74 @@ def is_subject_match(entity_text: str, subject: SubjectDetails) -> bool:
 
     # Address
     if subject.address:
-        addr_words = set(normalize(subject.address).split())
+        addr_norm = normalize(subject.address)
+        addr_words = set(addr_norm.split())
         entity_words = set(cleaned.split())
         stopwords = {"the", "a", "an", "and", "of", "in", "at", "on", "to"}
         entity_words -= stopwords
-        if entity_words and len(entity_words & addr_words) >= max(1, len(entity_words) * 0.7):
+        # House-number anchor: "14 High Street" is NOT the subject's address
+        # when the subject lives at "12 High Street" — word overlap alone
+        # would wrongly exclude neighbours and relatives at similar addresses.
+        subj_numbers = set(re.findall(r'\b\d+[a-z]?\b', addr_norm))
+        entity_numbers = set(re.findall(r'\b\d+[a-z]?\b', cleaned))
+        numbers_conflict = (subj_numbers and entity_numbers
+                            and not (subj_numbers & entity_numbers))
+        if (not numbers_conflict and entity_words
+                and len(entity_words & addr_words) >= max(1, len(entity_words) * 0.7)):
             return True
 
     return False
 
 
+def build_page_text(page_spans: list[TextSpan]) -> tuple[str, list[tuple[int, int]]]:
+    """
+    Construct the page text by concatenating span texts, recording each span's
+    exact [start, end) offset in the result.
+
+    Spans on the same line are joined with a space, line/block changes with a
+    newline. Because offsets are recorded during construction, mapping a regex
+    match back to its spans is exact — repeated text ("Dr", dates, page
+    furniture) can never cause a redaction box on the wrong occurrence.
+    """
+    parts: list[str] = []
+    offsets: list[tuple[int, int]] = []
+    pos = 0
+    prev = None
+    for span in page_spans:
+        if prev is not None:
+            sep = " " if (span.block_no == prev.block_no and
+                          span.line_no == prev.line_no) else "\n"
+            parts.append(sep)
+            pos += len(sep)
+        parts.append(span.text)
+        offsets.append((pos, pos + len(span.text)))
+        pos += len(span.text)
+        prev = span
+    return "".join(parts), offsets
+
+
 def map_text_to_spans(
-    page_text: str,
     page_spans: list[TextSpan],
+    offsets: list[tuple[int, int]],
     char_start: int,
     char_end: int,
 ) -> list[TextSpan]:
-    """
-    Find TextSpan objects whose bounding boxes correspond to the given
-    character range in page_text.
-    """
-    matching = []
-    search_from = 0
+    """Return the spans whose recorded offsets overlap [char_start, char_end)."""
+    return [span for span, (s, e) in zip(page_spans, offsets)
+            if s < char_end and e > char_start]
 
-    for span in page_spans:
-        pos = page_text.find(span.text, search_from)
-        if pos == -1:
-            pos = page_text.find(span.text)
-        if pos == -1:
-            continue
 
-        span_end = pos + len(span.text)
-        search_from = pos + 1
-
-        if pos < char_end and span_end > char_start:
-            matching.append(span)
-
-    return matching
+def _name_variants(entity_text: str) -> list[str]:
+    """Variants of a detected name for subject/staff comparison.
+    'SMITH, John' also yields 'John SMITH' so surname-first formats match
+    subject details entered as 'John Smith'."""
+    variants = [entity_text]
+    if "," in entity_text:
+        left, _, right = entity_text.partition(",")
+        reversed_form = f"{right.strip()} {left.strip()}".strip()
+        if reversed_form:
+            variants.append(reversed_form)
+    return variants
 
 
 def detect_pii(
@@ -197,7 +227,9 @@ def detect_pii(
         pages.setdefault(span.page_num, []).append(span)
 
     for page_num, page_spans in sorted(pages.items()):
-        page_text = get_full_page_text(pdf_path, page_num)
+        # Text is built from the spans themselves so regex match offsets map
+        # exactly back to span bounding boxes (and the PDF is never re-opened).
+        page_text, span_offsets = build_page_text(page_spans)
         if not page_text.strip():
             continue
 
@@ -213,7 +245,8 @@ def detect_pii(
             if not entity_text:
                 continue
 
-            if is_subject_match(entity_text, subject):
+            variants = _name_variants(entity_text)
+            if any(is_subject_match(v, subject) for v in variants):
                 candidates.append(RedactionCandidate(
                     text=entity_text,
                     category=PIICategory.PERSON_NAME,
@@ -237,7 +270,7 @@ def detect_pii(
             in_page_staff = (entity_norm in page_staff_names or
                              entity_no_title in page_staff_names)
 
-            if is_staff_name(entity_text) or in_staff_label or in_page_staff:
+            if any(is_staff_name(v) for v in variants) or in_staff_label or in_page_staff:
                 reason = "Matched staff list"
                 if in_staff_label:
                     reason = "Name in staff-labelled field (Practitioner/Author)"
@@ -254,7 +287,7 @@ def detect_pii(
                 ))
                 continue
 
-            matched_spans = map_text_to_spans(page_text, page_spans, nm.start, nm.end)
+            matched_spans = map_text_to_spans(page_spans, span_offsets, nm.start, nm.end)
 
             if matched_spans:
                 x0 = min(s.x0 for s in matched_spans)
@@ -301,7 +334,7 @@ def detect_pii(
                 continue
 
             matched_spans = map_text_to_spans(
-                page_text, page_spans, rm["start"], rm["end"]
+                page_spans, span_offsets, rm["start"], rm["end"]
             )
 
             if matched_spans:
@@ -337,7 +370,7 @@ def detect_pii(
             pattern = re.compile(r'\b' + re.escape(phrase) + r'\b', flags)
             for match in pattern.finditer(page_text):
                 matched_spans = map_text_to_spans(
-                    page_text, page_spans, match.start(), match.end()
+                    page_spans, span_offsets, match.start(), match.end()
                 )
                 if matched_spans:
                     x0 = min(s.x0 for s in matched_spans)

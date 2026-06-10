@@ -118,9 +118,11 @@ def find_regex_matches(text: str, page_num: int) -> list[dict]:
         })
 
     for match in EMAIL_PATTERN.finditer(text):
-        # Skip common NHS/surgery domain emails
+        # Skip NHS/surgery domain emails (NHSmail is plain @nhs.net; trusts
+        # use subdomains of nhs.uk)
         email = match.group(1).lower()
-        if email.endswith(".nhs.uk") or email.endswith(".nhs.net"):
+        domain = email.rsplit("@", 1)[-1]
+        if domain in ("nhs.net", "nhs.uk") or domain.endswith((".nhs.uk", ".nhs.net")):
             continue
         matches.append({
             "text": match.group(1),

@@ -68,6 +68,20 @@ body { overflow: hidden; }
   </div>
 </div>
 
+{% set unscreened = sar.unscreened_pages if sar.unscreened_pages is defined else [] %}
+{% if unscreened %}
+<div style="background:#3a2c14;border:1px solid #a37a33;border-radius:8px;padding:10px 16px;margin:6px 12px 0;">
+  <div style="font-weight:600;color:#ffd28a;font-size:12px;margin-bottom:4px;">
+    ⚠ {{ unscreened|length }} page{{ 's' if unscreened|length != 1 }} are scanned images and could NOT be screened for personal data — review them manually.
+  </div>
+  <div style="font-size:11px;color:#e8c87a;margin-bottom:4px;">
+    {% for p in unscreened[:10] %}<span style="margin-right:10px;">{{ p.source_file }}, page {{ p.page_num + 1 }}</span>{% endfor %}
+    {% if unscreened|length > 10 %}<span>… and {{ unscreened|length - 10 }} more</span>{% endif %}
+  </div>
+  <div style="font-size:11px;color:#c8a85a;">Install the OCR engine to screen scanned pages automatically (see INSTALL.md).</div>
+</div>
+{% endif %}
+
 <div class="review-layout">
   <!-- PDF panel -->
   <div class="review-pdf-panel">

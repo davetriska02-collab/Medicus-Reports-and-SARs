@@ -25,6 +25,26 @@
 </div>
 {% endif %}
 
+{% set unscreened = sar.unscreened_pages if sar.unscreened_pages is defined else [] %}
+{% if unscreened %}
+<div style="background:#3a2c14;border:1px solid #a37a33;border-radius:8px;padding:14px 18px;margin-bottom:18px;">
+  <div style="font-weight:600;color:#ffd28a;font-size:13px;margin-bottom:6px;">
+    ⚠ {{ unscreened|length }} page{{ 's' if unscreened|length != 1 }} are scanned images and could NOT be screened for personal data — review them manually before disclosure.
+  </div>
+  <div style="font-size:12px;color:#e8c87a;margin-bottom:8px;">
+    These pages are image-only and were not checked by automated detection.
+    Any personal data on these pages remains visible and must be reviewed manually.
+  </div>
+  <ul style="font-size:12px;color:#e8c87a;margin:0 0 8px 16px;padding:0;">
+    {% for p in unscreened[:10] %}
+    <li>{{ p.source_file }}, page {{ p.page_num + 1 }}</li>
+    {% endfor %}
+    {% if unscreened|length > 10 %}<li>… and {{ unscreened|length - 10 }} more (see audit log)</li>{% endif %}
+  </ul>
+  <div style="font-size:11px;color:#c8a85a;">Install the OCR engine to screen scanned pages automatically (see INSTALL.md).</div>
+</div>
+{% endif %}
+
 <div class="complete-hero">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;">
     <div>

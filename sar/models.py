@@ -125,6 +125,10 @@ class SARRequest:
     # Basename of the "main record" file — always pinned first regardless of sort order
     main_record_file: str = ""
 
+    # Pages that could not be screened (image-only, no OCR engine available).
+    # Each entry: {"source_file": str, "page_num": int}
+    unscreened_pages: list = field(default_factory=list)
+
     # Stop-the-clock fields
     clock_paused: bool = False
     paused_at: str = ""              # ISO timestamp when clock was paused

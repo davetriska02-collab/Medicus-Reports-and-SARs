@@ -94,7 +94,7 @@ def _spans_for_lines(lines):
 
 def test_surname_first_subject_excluded_not_redacted():
     spans = _spans_for_lines(["SMITH, John attended with daughter Emma Watson."])
-    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")
+    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")[0]
     by_text = {c.text: c for c in cands}
     subj = next((c for c in cands if "SMITH, John" in c.text), None)
     assert subj is not None and subj.status == RedactionStatus.EXCLUDED_SUBJECT
@@ -105,21 +105,21 @@ def test_surname_first_subject_excluded_not_redacted():
 
 def test_subject_nhs_number_excluded():
     spans = _spans_for_lines(["NHS Number: 943 476 5919"])
-    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")
+    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")[0]
     nhs = next((c for c in cands if c.category == PIICategory.NHS_NUMBER), None)
     assert nhs is not None and nhs.status == RedactionStatus.EXCLUDED_SUBJECT
 
 
 def test_staff_label_context_excludes_practitioner():
     spans = _spans_for_lines(["Practitioner: Dr David Jones"])
-    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")
+    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")[0]
     staff = next((c for c in cands if "Jones" in c.text), None)
     assert staff is not None and staff.status == RedactionStatus.EXCLUDED_STAFF
 
 
 def test_context_snippet_captured():
     spans = _spans_for_lines(["Seen with daughter Emma Watson at the clinic today."])
-    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")
+    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")[0]
     emma = next(c for c in cands if "Emma Watson" in c.text)
     assert "daughter" in emma.context and "clinic" in emma.context
 
@@ -152,7 +152,7 @@ def test_repeated_text_maps_to_correct_occurrence():
     assert [s.y0 for s in mapped] == [110, 110]
 
     # End to end: the "Dr Wilson" candidate's box must be on line 2
-    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")
+    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")[0]
     wilson = next(c for c in cands if "Wilson" in c.text)
     assert wilson.y0 >= 110
 

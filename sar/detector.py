@@ -9,6 +9,8 @@ from sar.staff_list import is_staff_name
 from sar.name_detector import detect_names
 from sar.custom_words import get_custom_words
 from sar.risk_words import check_text_for_risk
+from sar import ocr as _ocr
+from sar.pdf_parser import page_needs_ocr as _page_needs_ocr
 
 # Default confidence thresholds (used when no DetectionSettings provided)
 AUTO_REDACT_THRESHOLD = 0.80
@@ -209,16 +211,32 @@ def _context_snippet(page_text: str, start: int, end: int, pad: int = 70) -> str
     return f"{prefix}{snippet}{suffix}"
 
 
+_OCR_CONFIDENCE_CAP = 0.85  # OCR text is less reliable; cap confidence here
+
+
 def detect_pii(
     pdf_path: str,
     text_spans: list[TextSpan],
     subject: SubjectDetails,
     source_filename: str,
     settings: Optional[DetectionSettings] = None,
-) -> list[RedactionCandidate]:
-    """
-    Detect third-party PII in a single PDF.
-    Combines rule-based name detection with regex patterns.
+) -> tuple[list[RedactionCandidate], list[dict]]:
+    """Detect third-party PII in a single PDF.
+
+    Combines rule-based name detection with regex patterns.  For pages that
+    appear to be scanned images (image present, very little native text):
+
+    - If Tesseract is available: OCR the page and screen the resulting spans
+      exactly like normal spans (confidence capped at 0.85).
+    - If Tesseract is unavailable: record the page as unscreened.
+
+    Returns a tuple ``(candidates, unscreened_pages)`` where
+    ``unscreened_pages`` is a list of ``{"source_file": str, "page_num": int}``
+    dicts for pages that were not checked due to missing OCR.
+
+    For backwards compatibility with callers that only capture the first
+    element of the return value, the tuple unpacks naturally:
+    ``candidates = detect_pii(...)[0]``  or  ``candidates, _ = detect_pii(...)``
     """
     if settings is None:
         settings = DetectionSettings()
@@ -228,6 +246,7 @@ def detect_pii(
     enabled = set(settings.enabled_categories)
 
     candidates = []
+    unscreened_pages: list[dict] = []
 
     # Load custom words once for the whole document
     custom_words = get_custom_words()
@@ -237,7 +256,46 @@ def detect_pii(
     for span in text_spans:
         pages.setdefault(span.page_num, []).append(span)
 
+    # Determine total page count for the PDF so we can check pages that have
+    # no spans at all (pure image pages produce zero spans from extract_text_spans).
+    try:
+        import fitz as _fitz
+        _doc = _fitz.open(pdf_path)
+        _total_pages = len(_doc)
+        _doc.close()
+    except Exception:
+        _total_pages = max((p + 1 for p in pages), default=0)
+
+    # Build a combined set of page numbers to process:
+    # pages that yielded spans + any pages that need OCR and have no spans.
+    _all_page_nums: set[int] = set(pages.keys())
+    for _pn in range(_total_pages):
+        if _pn not in _all_page_nums:
+            try:
+                if _page_needs_ocr(pdf_path, _pn):
+                    _all_page_nums.add(_pn)
+                    pages[_pn] = []   # empty span list; will be OCR'd below
+            except Exception:
+                pass
+
     for page_num, page_spans in sorted(pages.items()):
+        # ── OCR / unscreened detection ────────────────────────────────────
+        _use_ocr_spans = False
+        _page_candidates_start = len(candidates)
+        try:
+            _needs_ocr = _page_needs_ocr(pdf_path, page_num)
+        except Exception:
+            _needs_ocr = False
+        if _needs_ocr:
+            if _ocr.tesseract_available():
+                ocr_spans = _ocr.ocr_page_spans(pdf_path, page_num)
+                if ocr_spans:
+                    page_spans = ocr_spans
+                    _use_ocr_spans = True
+            else:
+                unscreened_pages.append({"source_file": source_filename,
+                                         "page_num": page_num})
+                continue   # skip — cannot screen without OCR
         # Text is built from the spans themselves so regex match offsets map
         # exactly back to span bounding boxes (and the PDF is never re-opened).
         page_text, span_offsets = build_page_text(page_spans)
@@ -408,6 +466,14 @@ def detect_pii(
                     context=_context_snippet(page_text, match.start(), match.end()),
                 ))
 
+        # ── OCR: cap confidence and prefix reason ────────────────────────
+        if _use_ocr_spans:
+            for c in candidates[_page_candidates_start:]:
+                if c.confidence > _OCR_CONFIDENCE_CAP:
+                    c.confidence = _OCR_CONFIDENCE_CAP
+                if not c.reason.startswith("OCR: "):
+                    c.reason = "OCR: " + c.reason
+
     # Deduplicate: same text + page + file + category
     # Also filter out disabled categories (except excluded_subject/staff which are always kept)
     seen = set()
@@ -425,4 +491,4 @@ def detect_pii(
                 c.risk_flags = check_text_for_risk(c.text)
             deduped.append(c)
 
-    return deduped
+    return deduped, unscreened_pages

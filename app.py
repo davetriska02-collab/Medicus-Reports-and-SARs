@@ -176,6 +176,7 @@ def _to_dict(sar):
         "id": sar.id, "created_at": sar.created_at, "last_modified": sar.last_modified,
         "status": sar.status, "archived": getattr(sar,"archived",False),
         "redaction_failures": getattr(sar,"redaction_failures",[]),
+        "unscreened_pages": getattr(sar,"unscreened_pages",[]),
         "due_date": sar.due_date, "notes": sar.notes, "workflow_status": sar.workflow_status,
         "completed_at": getattr(sar, "completed_at", ""),
         "allocated_to": sar.allocated_to, "allocated_to_name": sar.allocated_to_name,
@@ -239,6 +240,7 @@ def _sar_from_dict(data):
     )
     sar.archived = data.get("archived", False)
     sar.redaction_failures = data.get("redaction_failures", [])
+    sar.unscreened_pages = data.get("unscreened_pages", [])
     ds = data.get("detection_settings")
     if ds:
         sar.detection_settings = DetectionSettings(
@@ -687,11 +689,13 @@ def create_sar():
             sar.file_order=[os.path.basename(p) for p in sar.pdf_files]
             if not sar.main_record_file and sar.file_order: sar.main_record_file=sar.file_order[0]
             sar.pdf_files.sort(key=lambda p: sar.document_dates.get(os.path.basename(p)) or "9999-99-99")
-            ac=[]
+            ac=[]; up=[]
             for i,pp in enumerate(sar.pdf_files):
                 nm=os.path.basename(pp); _emit(q,0.30+0.65*i/np,f"Analysing {nm}... ({i+1}/{np})")
-                ac.extend(detect_pii(pp,extract_text_spans(pp),subj,nm,settings=sar.detection_settings))
-            sar.candidates=ac; sar.status="reviewing"
+                _c,_u=detect_pii(pp,extract_text_spans(pp),subj,nm,settings=sar.detection_settings)
+                ac.extend(_c); up.extend(_u)
+            sar.candidates=ac; sar.unscreened_pages=up; sar.status="reviewing"
+            if up: _audit("pages_unscreened", target=sar.id, detail=f"{len(up)} page(s) not screened")
             _set(sar.id,sar); _save(sar)
             q.put({"done":True,"sar_id":sar.id,"total_candidates":len(ac),
                    "auto_redact":sum(1 for c in ac if c.status==RedactionStatus.AUTO_REDACT),
@@ -873,7 +877,8 @@ def finalise_sar(sid):
             out_path,file_failed=apply_redactions(pp,sar.candidates,od)
             rf.append(os.path.basename(out_path)); failed.extend(file_failed)
         failed_ids={c.id for c in failed}
-        lp=generate_redaction_log(sar.candidates,od,sid,failed_ids=failed_ids)
+        lp=generate_redaction_log(sar.candidates,od,sid,failed_ids=failed_ids,
+                                   unscreened_pages=getattr(sar,"unscreened_pages",None))
     except Exception as e:
         log.exception("Finalise failed for SAR %s", sid)
         return jsonify({"error":f"Redaction failed: {e}"}),500
@@ -1111,13 +1116,18 @@ def reparse_sar(sid):
     sar=_get(sid)
     if not sar: return jsonify({"error":"Not found"}),404
     keys={(c.source_file,c.page_num,round(c.x0,1),round(c.y0,1),c.text.lower()) for c in sar.candidates}
-    new=[]
+    new=[]; up=[]
     for pp in sar.pdf_files:
         if not os.path.exists(pp): continue
-        for c in detect_pii(pp,extract_text_spans(pp),sar.subject,os.path.basename(pp),settings=sar.detection_settings):
+        _c,_u=detect_pii(pp,extract_text_spans(pp),sar.subject,os.path.basename(pp),settings=sar.detection_settings)
+        up.extend(_u)
+        for c in _c:
             k=(c.source_file,c.page_num,round(c.x0,1),round(c.y0,1),c.text.lower())
             if k not in keys: keys.add(k); new.append(c)
-    sar.candidates.extend(new); _save(sar); return jsonify({"ok":True,"new_found":len(new)})
+    sar.candidates.extend(new)
+    sar.unscreened_pages=up
+    if up: _audit("pages_unscreened", target=sid, detail=f"{len(up)} page(s) not screened")
+    _save(sar); return jsonify({"ok":True,"new_found":len(new)})
 @app.route("/api/sar/<sid>/redetect",methods=["POST"])
 @require_admin
 def redetect_sar(sid):
@@ -1135,14 +1145,18 @@ def redetect_sar(sid):
     def _proc():
         try:
             pf=[p for p in sar.pdf_files if os.path.exists(p)]; n=len(pf)
-            nc=[]
+            nc=[]; up=[]
             for i,pp in enumerate(pf):
                 nm=os.path.basename(pp); _emit(q,0.1+0.85*i/max(n,1),f"Re-scanning {nm}... ({i+1}/{n})")
-                for c in detect_pii(pp,extract_text_spans(pp),sar.subject,nm,settings=sar.detection_settings):
+                _c,_u=detect_pii(pp,extract_text_spans(pp),sar.subject,nm,settings=sar.detection_settings)
+                up.extend(_u)
+                for c in _c:
                     r=mem.get((c.text.strip().lower(),c.category.value))
                     if r: c.status=RedactionStatus(r)
                     nc.append(c)
             sar.candidates=nc+[c for c in sar.candidates if c.category==PIICategory.MANUAL]
+            sar.unscreened_pages=up
+            if up: _audit("pages_unscreened", target=sar.id, detail=f"{len(up)} page(s) not screened")
             _save(sar); q.put({"done":True,"sar_id":sar.id,"total_candidates":len(sar.candidates)})
         except Exception as e: q.put({"error":str(e)})
     threading.Thread(target=_proc,daemon=True).start()

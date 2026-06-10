@@ -22,16 +22,20 @@ def generate_redaction_log(
     output_dir: str,
     sar_id: str,
     failed_ids: set[str] | None = None,
+    unscreened_pages: list[dict] | None = None,
 ) -> str:
     """
     Generate a PDF redaction log listing all redaction decisions.
     failed_ids: candidate ids approved for redaction that could NOT be placed
     on the page — these are reported separately so the log never claims a
     redaction was applied when it was not.
+    unscreened_pages: list of {"source_file": str, "page_num": int} dicts for
+    pages that were image-only and could not be screened by automated detection.
     Returns path to the log PDF.
     """
     doc = fitz.open()
     failed_ids = failed_ids or set()
+    unscreened_pages = unscreened_pages or []
 
     approved = [c for c in candidates if c.status in
                 (RedactionStatus.AUTO_REDACT, RedactionStatus.APPROVED)]
@@ -60,6 +64,7 @@ def generate_redaction_log(
         f"Excluded (staff): {len(excluded_staff)}",
         f"Rejected by reviewer: {len(rejected)}",
         f"Unreviewed (not redacted): {len(flagged)}",
+        f"UNSCREENED PAGES (image-only, no OCR): {len(unscreened_pages)}",
         "",
         "=" * 60,
         "REDACTIONS APPLIED",
@@ -140,6 +145,26 @@ def generate_redaction_log(
                 f"   Confidence: {c.confidence:.0%}",
             ])
 
+    if unscreened_pages:
+        lines.extend([
+            "",
+            "=" * 60,
+            "UNSCREENED PAGES — NOT CHECKED BY AUTOMATED DETECTION",
+            "=" * 60,
+            "",
+            "The following pages are image-only (scanned documents) and could",
+            "NOT be screened for personal data because no OCR engine was",
+            "available. These pages must be reviewed manually before disclosure.",
+            "Install Tesseract OCR (see INSTALL.md) to screen these pages",
+            "automatically in future runs.",
+        ])
+        for i, p in enumerate(unscreened_pages, 1):
+            lines.extend([
+                "",
+                f"{i}. File: {p['source_file']}",
+                f"   Page: {p['page_num'] + 1}",
+            ])
+
     # Write to PDF
     fontsize = 9
     margin = 50
@@ -163,6 +188,7 @@ def generate_redaction_log(
             or line_text.startswith("!!! REDACTION FAILURES")
             or line_text.startswith("REJECTED")
             or line_text.startswith("UNREVIEWED")
+            or line_text.startswith("UNSCREENED PAGES")
         )
 
         page.insert_text(

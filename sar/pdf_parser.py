@@ -235,3 +235,41 @@ def is_image_only_page(pdf_path: str, page_num: int) -> bool:
     result = not _has_text_content(raw)
     doc.close()
     return result
+
+
+def page_needs_ocr(page_or_path, page_num: int | None = None) -> bool:
+    """Return True when a page has at least one image and fewer than ~30
+    non-whitespace characters of extractable text.
+
+    Accepts either:
+    - a :class:`fitz.Page` object (``page_num`` is ignored), or
+    - a path string and a ``page_num`` integer.
+
+    Scanned documents (Lloyd George cards, hospital letters) typically
+    embed the whole page as an image with no text layer at all; the 30-char
+    threshold gives a small margin for pages that carry both a faint text
+    stamp and a scanned image.
+    """
+    _TEXT_THRESHOLD = 30
+
+    if isinstance(page_or_path, str):
+        doc = fitz.open(page_or_path)
+        page = doc[page_num]
+        _close = True
+    else:
+        page = page_or_path
+        _close = False
+
+    try:
+        has_images = bool(page.get_images())
+        raw = page.get_text("dict", sort=True)
+        chars = sum(
+            len(s["text"].replace(" ", "").replace("\n", "").replace("\t", ""))
+            for block in raw["blocks"] if block["type"] == 0
+            for line in block["lines"]
+            for s in line["spans"]
+        )
+        return has_images and chars < _TEXT_THRESHOLD
+    finally:
+        if _close:
+            doc.close()

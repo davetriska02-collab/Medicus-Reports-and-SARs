@@ -126,6 +126,50 @@ staff can accept (or IT can trust the cert centrally via group policy).
 
 ---
 
+## OCR for scanned documents (optional, recommended)
+
+Some GP records contain scanned pages — Lloyd George cards, hospital letters,
+handwritten notes — that have no text layer. SAR Redact cannot detect personal
+data on these pages without an OCR engine. When a page cannot be screened, an
+**amber warning banner** appears on the review and complete screens listing the
+affected pages. Those pages must be reviewed manually before disclosure.
+
+Installing Tesseract OCR removes the warning and causes SAR Redact to screen
+scanned pages automatically.
+
+### Windows (no admin rights)
+
+1. Download the portable Tesseract build from:
+   `https://github.com/UB-Mannheim/tesseract/releases` (look for
+   `tesseract-ocr-w64-setup-*.exe` — the "portable" or "zip" variant
+   requires no installer).
+2. Extract the contents so that `tesseract.exe` ends up at:
+   ```
+   <SAR Redact folder>\tools\tesseract\tesseract.exe
+   ```
+   and the `tessdata` folder sits alongside it:
+   ```
+   <SAR Redact folder>\tools\tesseract\tessdata\
+   ```
+3. Restart SAR Redact. It auto-detects the bundled build on start-up and
+   the warning banners disappear as scanned pages are now OCR'd automatically.
+
+### Windows / Linux (Tesseract already on PATH)
+
+If Tesseract is already installed system-wide (e.g. via `winget install
+UB-Mannheim.TesseractOCR` on Windows, or `apt install tesseract-ocr` on
+Debian/Ubuntu), SAR Redact finds it automatically via `shutil.which` — no
+further configuration is needed. Restart the server and the banners clear.
+
+### Verifying detection
+
+After installing Tesseract, upload a SAR that contains a scanned page and
+re-run detection (Admin → Re-detect). If OCR is working, the amber banner
+will no longer appear and any personal data found by OCR will be listed as
+candidates with a confidence ≤ 85 % and a reason beginning "OCR: …".
+
+---
+
 ## Data location
 
 All patient data is stored in the `data\` subfolder of the SAR Redact

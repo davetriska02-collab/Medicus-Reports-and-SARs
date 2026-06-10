@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.4.0"
+APP_VERSION = "2.5.0"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -1752,6 +1752,19 @@ def admin_name_suggestions_dismiss():
     _dictionary.dismiss_suggestion(name)
     _audit("dictionary_suggestion_dismissed",detail=name)
     return jsonify({"ok":True})
+
+@app.route("/api/demo-sar",methods=["POST"])
+@require_admin
+def demo_sar():
+    from sar.demo import create_demo_sar
+    # Return existing non-archived demo SAR if one already exists
+    for s in _all():
+        if (not getattr(s,"archived",False)
+                and "SYNTHETIC" in (s.subject.full_name or "").upper()):
+            return jsonify({"ok":True,"sar_id":s.id})
+    sid=create_demo_sar(UPLOAD_DIR,_set,_save)
+    _audit("demo_sar_created",target=sid)
+    return jsonify({"ok":True,"sar_id":sid})
 
 @app.errorhandler(403)
 def forbidden(e): return render_template("403.html"),403

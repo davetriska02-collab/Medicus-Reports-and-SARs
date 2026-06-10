@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.5.0] — 2026-06-10
+
+### Added
+- **Demo mode** — admin button "🎓 Try a demo SAR" on the dashboard creates a fully synthetic 4-page GP record with planted PII of several kinds (names in titled/surname-first/ALL-CAPS forms, NHS numbers that pass Modulus-11, addresses, phone numbers, `@nhs.net` emails). Reviewers see real detection candidates instantly without needing to supply patient data. A second click returns the same demo SAR rather than stacking duplicates. Subject is unmistakably synthetic: "DEMO PATIENT — SYNTHETIC DATA". (`sar/demo.py`, `app.py` `/api/demo-sar`).
+- **Continuous integration** — GitHub Actions workflow (`.github/workflows/tests.yml`) runs the full pytest suite on every push and pull request, keeping the main branch green.
+- **One-click updater** (`update.bat`) — double-click to update SAR Redact in place on any NHS Windows machine without admin rights. Queries the GitHub releases API, compares with the installed version (`APP_VERSION` in `app.py`), downloads only when a new version is available, backs up current app files to `backup_pre_update_<version>\`, then copies the new files over — leaving `data\`, `uploads\`, and `output\` untouched. Runs via PowerShell only; no admin rights needed. Added to both the standard zip and offline bundle manifests.
+- **OCR for scanned pages** — Tesseract integration screens image-only pages automatically; an amber warning banner lists any pages that could not be OCR'd so reviewers know to check them manually before disclosure. (`sar/ocr.py`, `INSTALL.md`).
+- **Unscreened-page warnings** — pages that could not be screened (e.g. scanned with no OCR engine available) are highlighted on the review and completion screens so nothing is inadvertently disclosed unreviewd.
+- **DOCX / EML / MSG ingestion** — Word documents, Outlook `.eml` emails, and Outlook `.msg` files are converted to PDF for review; email attachments of supported types are extracted and processed alongside the message body.
+- **Self-learning detection dictionary** (`sar/dictionary.py`) — SAR Redact learns from reviewer decisions: names that were repeatedly approved for redaction are suggested for the practice dictionary; admins can accept or dismiss suggestions from the Settings page.
+- **Intake fields** (`request_date`, `id_verified`, `scope_notes`) — capture date received, identity verification method, and scope notes at SAR creation time. `request_date` starts the statutory 30-day clock; date is shown in the SAR list and feeds the IG report.
+- **Article 12 acknowledgment letter** — one-click generation of a UK GDPR Article 12 acknowledgment letter from the review screen, confirming receipt and quoting the statutory deadline.
+- **Dashboard deadline urgency strip** — non-archived, non-complete SARs with ≤7 days remaining are highlighted on the dashboard with colour-coded badges (overdue / ≤3 days / ≤7 days).
+- **Optional two-person sign-off** (`signoff_by`, `signoff_by_name`, `signoff_at`) — practices can require a second reviewer to sign off before finalising; the sign-off must be by a different person from the allocated reviewer. Configurable in Settings.
+
+---
+
 ## [2.4.0] — 2026-06-10
 
 ### Added

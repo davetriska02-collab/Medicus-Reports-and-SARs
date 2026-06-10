@@ -126,6 +126,27 @@ staff can accept (or IT can trust the cert centrally via group policy).
 
 ---
 
+## Updates
+
+**Easy path — one-click updater:**
+
+Double-click `update.bat`. It will:
+1. Query GitHub for the latest release
+2. Compare with your installed version and exit early if already up to date
+3. Ask you to close the server window
+4. Download the update zip, back up your current app files to `backup_pre_update_<version>\`, and copy the new files over
+5. Tell you to run `start_server.bat` (new dependencies install automatically)
+
+Your `data\`, `uploads\` and `output\` folders are never touched.
+
+**Manual path:**
+1. Download the latest zip from `https://github.com/davetriska02-collab/Medicus-Reports-and-SARs/releases`
+2. Extract it alongside your existing install
+3. Copy your `data\`, `uploads\`, and `output\` folders into the new folder
+4. Run `start_server.bat` from the new folder
+
+---
+
 ## OCR for scanned documents (optional, recommended)
 
 Some GP records contain scanned pages — Lloyd George cards, hospital letters,

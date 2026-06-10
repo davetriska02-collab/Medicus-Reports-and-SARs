@@ -31,7 +31,7 @@ PY_EMBED_URL = (f"https://www.python.org/ftp/python/{PY_VERSION}/"
 APP_ITEMS = [
     "app.py", "serve.py", "requirements.txt",
     "start_server.bat", "start_server.sh", "server_loop.bat",
-    "install_as_server.bat", "SAR-Redact.html",
+    "install_as_server.bat", "update.bat", "SAR-Redact.html",
     "README.md", "INSTALL.md", "EASY_INSTALL_GUIDE.md",
     "SECURITY.md", "CHANGELOG.md",
     "sar", "static", "templates", "tools",

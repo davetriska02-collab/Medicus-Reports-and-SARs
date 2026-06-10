@@ -1,6 +1,8 @@
 # SAR Redact v2
 ### Witley & Milford Surgery — Subject Access Request Redaction System
 
+[![Tests](https://github.com/davetriska02-collab/Medicus-Reports-and-SARs/actions/workflows/tests.yml/badge.svg)](https://github.com/davetriska02-collab/Medicus-Reports-and-SARs/actions/workflows/tests.yml)
+
 Built on the Medicus Suite design language. Processes GP medical records for Subject Access Request disclosure under UK GDPR.
 
 ---
@@ -38,12 +40,14 @@ On first launch you will be prompted to create an admin account. From there you 
 
 ## Updates
 
-SAR Redact checks for updates automatically each time the server starts. If a newer version is available, a green banner appears on the dashboard with a one-click download link.
+**Easy path:** double-click `update.bat`. It downloads the latest release from GitHub, backs up your current app files, and installs the new version — without touching your `data/`, `uploads/`, or `output/` folders. No admin rights needed.
+
+**Manual path:** download the latest zip from the releases page, extract alongside your existing install, and copy your `data/` folder across.
+
+SAR Redact also checks for updates automatically on server start — a green banner appears on the dashboard when a newer version is available.
 
 Updates are published to:  
 `https://github.com/davetriska02-collab/Medicus-Reports-and-SARs/releases`
-
-To update manually: download the latest zip, extract alongside your existing install, and copy your `data/` folder across.
 
 ---
 
@@ -71,6 +75,7 @@ All data is stored locally in the `data/` subfolder. Nothing is transmitted exte
 
 | Version | Notes |
 |---------|-------|
+| 2.5 | Demo mode (synthetic patient SAR for walkthroughs) · CI on every push · one-click `update.bat` updater (no admin rights) · OCR for scanned pages + unscreened-page warnings · DOCX/EML/MSG ingestion with attachment handling · self-learning detection dictionary · intake fields + statutory 30-day clock from request date · Article 12 acknowledgment letter · dashboard deadline urgency strip · optional two-person sign-off |
 | 2.4 | Combined print bundle: one-click merge of cover letter + certificate + all redacted documents into a single printable PDF (max 5 parts if very large) with contents page and continuous page numbering — one print job instead of hundreds · redaction log clearly marked internal-only |
 | 2.3 | ICO response pack (one-click Article 15 cover letter + certificate of redaction with DPA 2018 exemptions schedule) · IG report dashboard (turnaround vs statutory deadline, monthly volumes, CSV export) · grouped by-name review ("Redact all 12 occurrences") · context snippets on every candidate · presence indicator + allocation warning · before/after disclosure preview · J/K keyboard triage · XSS fix for PDF-derived text · admin review-page 500 fix |
 | 2.2 | Central-server release: SQLite storage (auto-migrates JSON) · access audit trail with admin viewer + CSV export · nightly backups with retention · optional HTTPS (cheroot + self-signed cert tool) · `install_as_server.bat` autostart + restart-on-crash + CONNECT.txt · idle session timeout · page-render cache · `/healthz` + `/admin/status` · surname-first (SMITH, John) and ALL-CAPS name detection · exact span mapping · detection benchmark (names 99.4% recall / 100% precision on synthetic corpus) |

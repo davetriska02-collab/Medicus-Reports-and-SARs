@@ -30,6 +30,9 @@
     <a href="/" class="btn btn-ghost">← Active</a>
     {% endif %}
     <button class="btn btn-ghost" onclick="toggleTransfer()">⇄ Transfer SAR</button>
+    {% if current_user and current_user.role == 'admin' %}
+    <button class="btn btn-ghost" id="demo-sar-btn" onclick="launchDemoSar()" title="Create a synthetic patient SAR to explore the review workflow">🎓 Try a demo SAR</button>
+    {% endif %}
     <a href="/new" class="btn btn-primary">+ New SAR</a>
   </div>
 </div>
@@ -333,6 +336,19 @@ function deleteSar(id, name) {
   fetch('/api/sar/' + id + '/delete', { method: 'POST' })
     .then(r => r.json())
     .then(d => { if (d.ok) location.reload(); else alert('Error: ' + (d.error || 'Unknown')); });
+}
+
+function launchDemoSar() {
+  const btn = document.getElementById('demo-sar-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating demo...'; }
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  fetch('/api/demo-sar', { method: 'POST', headers: {'X-CSRF-Token': csrf} })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok && d.sar_id) { window.location.href = '/review/' + d.sar_id; }
+      else { alert('Error: ' + (d.error || 'Unknown')); if (btn) { btn.disabled = false; btn.textContent = '🎓 Try a demo SAR'; } }
+    })
+    .catch(e => { alert('Request failed: ' + e); if (btn) { btn.disabled = false; btn.textContent = '🎓 Try a demo SAR'; } });
 }
 </script>
 {% endblock %}

@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -49,6 +49,7 @@ from sar.report_templates import (get_all_templates, get_template, save_custom_t
 from sar.report_store import save_report, load_report, load_all_reports, delete_report
 from sar.evidence_extractor import extract_evidence
 from sar.response_pack import generate_cover_letter, generate_certificate
+from sar.print_bundle import build_print_bundle
 from sar.report_generator import generate_report_pdf
 
 app = Flask(__name__)
@@ -897,7 +898,8 @@ def list_outputs(sid):
     fs=os.listdir(od)
     return jsonify({"redacted_files":[f for f in fs if f.endswith("_redacted.pdf")],
                     "log_file":next((f for f in fs if f.startswith("redaction_log_")),None),
-                    "pack_files":[f for f in fs if f.startswith(("cover_letter_","certificate_of_redaction_"))]})
+                    "pack_files":[f for f in fs if f.startswith(("cover_letter_","certificate_of_redaction_"))],
+                    "bundle_files":sorted(f for f in fs if f.startswith("print_bundle_"))})
 @app.route("/api/sar/<sid>/response-pack",methods=["POST"])
 @require_admin
 def generate_response_pack(sid):
@@ -923,6 +925,29 @@ def generate_response_pack(sid):
         return jsonify({"error":f"Response pack generation failed: {e}"}),500
     _audit("response_pack_generated",target=sid,detail=sar.subject.full_name)
     return jsonify({"ok":True,"files":[os.path.basename(letter),os.path.basename(cert)]})
+@app.route("/api/sar/<sid>/print-bundle",methods=["POST"])
+@require_login
+def generate_print_bundle(sid):
+    """Merge all disclosure files into 1-5 printable PDFs (court-bundle style)."""
+    sar=_get(sid)
+    if not sar: return jsonify({"error":"Not found"}),404
+    if sar.status!="complete":
+        return jsonify({"error":"Finalise the SAR before building the print bundle"}),400
+    if getattr(sar,"redaction_failures",[]):
+        return jsonify({"error":f"{len(sar.redaction_failures)} approved redaction(s) failed to apply — "
+                        "resolve them before printing for disclosure"}),409
+    od=os.path.join(OUTPUT_DIR,sid)
+    if not os.path.isdir(od): return jsonify({"error":"No output files — finalise first"}),400
+    try:
+        names=build_print_bundle(sar,od)
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+    except Exception as e:
+        log.exception("Print bundle failed for SAR %s",sid)
+        return jsonify({"error":f"Print bundle failed: {e}"}),500
+    _audit("print_bundle_generated",target=sid,
+           detail=f"{len(names)} part(s): "+", ".join(names))
+    return jsonify({"ok":True,"files":names})
 
 @app.route("/api/sar/<sid>/download/<filename>")
 @require_login

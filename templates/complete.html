@@ -60,8 +60,17 @@
     <div id="file-list-loading" style="color:var(--t4);font-size:12px;padding:16px;">Loading output files…</div>
     <div class="file-list hidden" id="output-files"></div>
 
-    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-primary" id="download-all-btn" onclick="downloadAll()" style="display:none;">↓ Download all (ZIP)</button>
+      <button class="btn btn-ghost" id="bundle-btn" onclick="buildBundle()" style="display:none;"
+        title="Merge the cover letter, certificate and all redacted documents into one PDF (up to 5 parts if very large) — one print job instead of one per file">🖨 Build print bundle</button>
+      <span id="bundle-status" style="font-size:11px;color:var(--green);display:none;"></span>
+    </div>
+    <div style="margin-top:6px;font-size:11px;color:var(--t4);">
+      The print bundle combines everything for disclosure into a single PDF with a
+      contents page and continuous page numbers — print one document instead of
+      hundreds. The redaction log is kept separate (it is an internal record and
+      must not be disclosed).
     </div>
 
     <div style="margin-top:28px;">
@@ -155,7 +164,8 @@ function fileLabel(fn) {
   if (fn.endsWith('_redacted.pdf')) return 'Redacted PDF';
   if (fn.startsWith('cover_letter_')) return 'Response pack · Cover letter';
   if (fn.startsWith('certificate_of_redaction_')) return 'Response pack · Certificate of redaction';
-  return 'Audit log';
+  if (fn.startsWith('print_bundle_')) return 'Print bundle · Combined disclosure for printing';
+  return 'Audit log · Internal — do not disclose';
 }
 
 function loadOutputs() {
@@ -165,7 +175,8 @@ function loadOutputs() {
       document.getElementById('file-list-loading').style.display = 'none';
       const list = document.getElementById('output-files');
       list.classList.remove('hidden');
-      const allFiles = [...(data.redacted_files || []),
+      const allFiles = [...(data.bundle_files || []),
+                        ...(data.redacted_files || []),
                         ...(data.pack_files || []),
                         ...(data.log_file ? [data.log_file] : [])];
       if (!allFiles.length) {
@@ -181,6 +192,7 @@ function loadOutputs() {
           </div>
         </div>`).join('');
       document.getElementById('download-all-btn').style.display = 'inline-flex';
+      document.getElementById('bundle-btn').style.display = 'inline-flex';
     })
     .catch(() => {
       document.getElementById('file-list-loading').textContent = 'Could not load output files.';
@@ -208,6 +220,24 @@ function generatePack() {
 }
 
 function downloadAll() { window.location.href = '/api/sar/' + SAR_ID + '/download-all'; }
+
+function buildBundle() {
+  const btn = document.getElementById('bundle-btn');
+  btn.disabled = true; btn.textContent = 'Building…';
+  fetch('/api/sar/' + SAR_ID + '/print-bundle', { method: 'POST', headers: {'Content-Type': 'application/json'} })
+    .then(r => r.json().then(d => ({ ok: r.ok, d })))
+    .then(({ ok, d }) => {
+      if (!ok) throw new Error(d.error || 'Bundle failed');
+      const st = document.getElementById('bundle-status');
+      st.textContent = d.files.length === 1
+        ? '✓ Combined PDF ready — one print job'
+        : `✓ Bundle ready in ${d.files.length} parts`;
+      st.style.display = 'inline';
+      loadOutputs();
+    })
+    .catch(e => alert(e.message))
+    .finally(() => { btn.disabled = false; btn.textContent = '🖨 Build print bundle'; });
+}
 
 // ── Before/after preview ────────────────────────────────────────────────────
 let pv = { file: null, page: 0, total: 1 };

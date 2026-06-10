@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.4.0] — 2026-06-10
+
+### Added
+- **Combined print bundle** — one click on the completion screen merges the cover letter, certificate of redaction, and every redacted document into a single PDF for printing (court-bundle style): contents page listing each document and its starting page, continuous "Page n of N" footer throughout. Bundles over 200 MB are split into at most 5 parts with continuous page numbering across parts. Replaces printing hundreds of individual files one at a time when disclosures are handed over on paper.
+- The redaction log is deliberately excluded from the bundle — it records redacted text verbatim and is an internal record; the UI now labels it "Internal — do not disclose".
+
+---
+
 ## [2.3.0] — 2026-06-10
 
 ### Added

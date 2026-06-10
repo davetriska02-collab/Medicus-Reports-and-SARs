@@ -1,0 +1,48 @@
+name: Compliance Docs Review
+
+# Weekly review of DPIA and DCB0129 clinical safety case against recent code
+# changes, using Claude Haiku (low cost). Creates or updates GitHub issues
+# when documents appear to need updating.
+#
+# Required repository secret: ANTHROPIC_API_KEY
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Every Monday 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      look_back_days:
+        description: 'Days of git history to examine'
+        default: '30'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Anthropic SDK
+        run: pip install --quiet 'anthropic>=0.40'
+
+      - name: Run compliance review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          LOOK_BACK_DAYS: ${{ inputs.look_back_days || '30' }}
+        run: python tools/review_compliance_docs.py

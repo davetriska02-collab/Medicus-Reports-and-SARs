@@ -12,7 +12,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-GITHUB_REPO    = "davetriska02-collab/SAR-REDACTOR-MEDICUS"
+GITHUB_REPO    = "davetriska02-collab/Medicus-Reports-and-SARs"
 RELEASES_URL   = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_PAGE  = f"https://github.com/{GITHUB_REPO}/releases"
 

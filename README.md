@@ -41,7 +41,7 @@ On first launch you will be prompted to create an admin account. From there you 
 SAR Redact checks for updates automatically each time the server starts. If a newer version is available, a green banner appears on the dashboard with a one-click download link.
 
 Updates are published to:  
-`https://github.com/davetriska02-collab/SAR-REDACTOR-MEDICUS/releases`
+`https://github.com/davetriska02-collab/Medicus-Reports-and-SARs/releases`
 
 To update manually: download the latest zip, extract alongside your existing install, and copy your `data/` folder across.
 

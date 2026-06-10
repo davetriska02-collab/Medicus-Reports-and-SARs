@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Extract version from tag
+        id: ver
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: pip install --quiet flask waitress pymupdf striprtf
+
+      # ── Standard zip (for users who already have Python installed) ──────────
+      - name: Build standard zip
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          python - <<'PYEOF'
+          import zipfile, os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          items = [
+              "app.py", "serve.py", "requirements.txt",
+              "start_server.bat", "start_server.sh", "server_loop.bat",
+              "install_as_server.bat", "SAR-Redact.html",
+              "README.md", "INSTALL.md", "EASY_INSTALL_GUIDE.md",
+              "SECURITY.md", "CHANGELOG.md",
+              "sar", "static", "templates", "tools",
+          ]
+          Path("dist").mkdir(exist_ok=True)
+          out = f"dist/sar-redact-v{version}.zip"
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+              for item in items:
+                  p = Path(item)
+                  if not p.exists():
+                      print(f"  skipping missing: {item}")
+                      continue
+                  if p.is_file():
+                      zf.write(p, Path("sar-redact") / p)
+                  else:
+                      for f in sorted(p.rglob("*")):
+                          if f.is_file() and "__pycache__" not in str(f) and not f.name.endswith(".pyc"):
+                              zf.write(f, Path("sar-redact") / f)
+              for d in ("data", "uploads", "output"):
+                  zf.writestr(f"sar-redact/{d}/.gitkeep", "")
+          size = Path(out).stat().st_size // 1024
+          print(f"Standard zip: {out}  ({size} KB)")
+          PYEOF
+
+      # ── Offline bundle — embedded Python + all Windows wheels ───────────────
+      - name: Build offline bundle
+        run: python tools/build_offline_bundle.py --out dist/
+
+      # ── Offline bundle — TLS variant (cheroot + cryptography) ───────────────
+      - name: Build offline bundle (TLS)
+        run: python tools/build_offline_bundle.py --tls --out dist/
+        # Non-fatal: some wheel indexes may lack TLS deps on this runner
+        continue-on-error: true
+
+      # ── Extract this tag's section from CHANGELOG.md ─────────────────────────
+      - name: Extract release notes
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          python - <<'PYEOF'
+          import re, os
+          version = os.environ["VERSION"]
+          text = open("CHANGELOG.md").read()
+          m = re.search(
+              rf"(## \[{re.escape(version)}\].*?)(?=\n## \[|\Z)",
+              text, re.DOTALL
+          )
+          notes = m.group(1).strip() if m else f"SAR Redact v{version}"
+          open("_release_notes.md", "w").write(notes)
+          print(f"Release notes ({len(notes)} chars) written")
+          PYEOF
+
+      # ── Create the GitHub release and attach all assets ──────────────────────
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          ASSETS=(
+            "dist/sar-redact-v${VERSION}.zip"
+            "dist/sar-redact-offline-v${VERSION}.zip"
+          )
+          # Include TLS bundle only if the build succeeded
+          TLS="dist/sar-redact-offline-tls-v${VERSION}.zip"
+          [ -f "$TLS" ] && ASSETS+=("$TLS")
+
+          gh release create "v${VERSION}" \
+            --title "SAR Redact v${VERSION}" \
+            --notes-file _release_notes.md \
+            "${ASSETS[@]}"

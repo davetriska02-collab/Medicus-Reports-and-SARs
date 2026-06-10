@@ -32,7 +32,8 @@ APP_ITEMS = [
     "app.py", "serve.py", "requirements.txt",
     "start_server.bat", "start_server.sh", "server_loop.bat",
     "install_as_server.bat", "SAR-Redact.html",
-    "README.md", "INSTALL.md", "SECURITY.md",
+    "README.md", "INSTALL.md", "EASY_INSTALL_GUIDE.md",
+    "SECURITY.md", "CHANGELOG.md",
     "sar", "static", "templates", "tools",
 ]
 EMPTY_DIRS = ["data", "uploads", "output"]
@@ -91,10 +92,11 @@ def copy_app(staging: Path):
         (staging / d / ".gitkeep").touch()
 
 
-def make_zip(staging: Path, out_dir: Path, version: str) -> Path:
+def make_zip(staging: Path, out_dir: Path, version: str, tls: bool = False) -> Path:
     print("[4/4] Writing bundle zip...")
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / f"sar-redact-offline-v{version}.zip"
+    suffix = "-tls" if tls else ""
+    zip_path = out_dir / f"sar-redact-offline{suffix}-v{version}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(staging):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
@@ -126,7 +128,7 @@ def main():
         fetch_embed_python(staging)
         install_wheels(staging, args.tls)
         copy_app(staging)
-        make_zip(staging, Path(args.out), version)
+        make_zip(staging, Path(args.out), version, tls=args.tls)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     print("\nDone. Recipient: extract the zip to C:\\SAR Redact\\ and run "

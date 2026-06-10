@@ -198,6 +198,17 @@ def _name_variants(entity_text: str) -> list[str]:
     return variants
 
 
+def _context_snippet(page_text: str, start: int, end: int, pad: int = 70) -> str:
+    """Surrounding text for the reviewer's reading pane — most decisions can
+    be made from this without locating the match on the page image."""
+    s = max(0, start - pad)
+    e = min(len(page_text), end + pad)
+    snippet = " ".join(page_text[s:e].split())
+    prefix = "…" if s > 0 else ""
+    suffix = "…" if e < len(page_text) else ""
+    return f"{prefix}{snippet}{suffix}"
+
+
 def detect_pii(
     pdf_path: str,
     text_spans: list[TextSpan],
@@ -255,6 +266,7 @@ def detect_pii(
                     page_num=page_num,
                     reason="Matched data subject",
                     source_file=source_filename,
+                    context=_context_snippet(page_text, nm.start, nm.end),
                 ))
                 continue
 
@@ -284,6 +296,7 @@ def detect_pii(
                     page_num=page_num,
                     reason=reason,
                     source_file=source_filename,
+                    context=_context_snippet(page_text, nm.start, nm.end),
                 ))
                 continue
 
@@ -313,6 +326,7 @@ def detect_pii(
                 x0=x0, y0=y0, x1=x1, y1=y1,
                 reason=nm.reason,
                 source_file=source_filename,
+                context=_context_snippet(page_text, nm.start, nm.end),
             ))
 
         # ── Regex detection ───────────────────────────────────────────────
@@ -330,6 +344,7 @@ def detect_pii(
                     page_num=page_num,
                     reason=f"Matched data subject ({rm['category'].value})",
                     source_file=source_filename,
+                    context=_context_snippet(page_text, rm["start"], rm["end"]),
                 ))
                 continue
 
@@ -361,6 +376,7 @@ def detect_pii(
                 x0=x0, y0=y0, x1=x1, y1=y1,
                 reason=rm["reason"],
                 source_file=source_filename,
+                context=_context_snippet(page_text, rm["start"], rm["end"]),
             ))
 
         # ── Custom word detection ─────────────────────────────────────────────
@@ -389,6 +405,7 @@ def detect_pii(
                     x0=x0, y0=y0, x1=x1, y1=y1,
                     reason=f"Custom redaction word/phrase",
                     source_file=source_filename,
+                    context=_context_snippet(page_text, match.start(), match.end()),
                 ))
 
     # Deduplicate: same text + page + file + category

@@ -355,6 +355,19 @@ h2 { font-size: 14px; font-weight: 500; color: var(--t2); }
 .cand-conf { font-family: var(--mono); font-size: 9px; color: var(--t5); }
 .cand-text { font-size: 12px; color: var(--t1); margin-bottom: 8px; word-break: break-word; }
 .cand-text.risk { color: var(--amber); }
+.cand-context { font-size: 10px; color: var(--t4); margin-bottom: 6px; line-height: 1.45; word-break: break-word; }
+
+/* Grouped (by-name) review */
+.group-card { border-left: 2px solid var(--accent); }
+.group-occs { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 8px; }
+.group-occ {
+  font-family: var(--mono); font-size: 9px; color: var(--t3);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 1px 5px; cursor: pointer; transition: border-color 0.12s;
+}
+.group-occ:hover { border-color: var(--accent); color: var(--t1); }
+.group-occ.status-approved, .group-occ.status-auto_redact { border-color: var(--green); }
+.group-occ.status-rejected { border-color: var(--red); }
 .cand-actions { display: flex; gap: 5px; flex-wrap: wrap; }
 .cand-btn {
   flex: 1; min-width: 0; padding: 5px 6px; font-size: 10px; font-weight: 600;

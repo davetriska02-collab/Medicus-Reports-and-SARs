@@ -194,7 +194,8 @@ def _to_dict(sar):
              "confidence":c.confidence,"page_num":c.page_num,
              "x0":c.x0,"y0":c.y0,"x1":c.x1,"y1":c.y1,
              "reason":c.reason,"exemption_code":c.exemption_code,
-             "risk_flags":c.risk_flags,"source_file":c.source_file}
+             "risk_flags":c.risk_flags,"source_file":c.source_file,
+             "context":getattr(c,"context","")}
             for c in sar.candidates
         ],
     }
@@ -212,7 +213,8 @@ def _sar_from_dict(data):
         status=RedactionStatus(c["status"]),confidence=c["confidence"],
         page_num=c["page_num"],x0=c["x0"],y0=c["y0"],x1=c["x1"],y1=c["y1"],
         reason=c["reason"],exemption_code=c.get("exemption_code",""),
-        risk_flags=c.get("risk_flags",[]),source_file=c["source_file"])
+        risk_flags=c.get("risk_flags",[]),source_file=c["source_file"],
+        context=c.get("context",""))
         for c in data["candidates"]]
     pdf_files = [_resolve_path(sid, p) for p in data["pdf_files"]]
     sar = SARRequest(
@@ -603,7 +605,8 @@ def review(sid):
     dm={x["name"]:x for x in fid}
     fif=[dm[bn] for bn in fon if bn in dm]
     mr=sar.main_record_file or (fon[0] if fon else "")
-    return render_template("review.html",sar=sar,files_info=fid,files_info_date=fid,files_info_file=fif,main_record_file=mr)
+    return render_template("review.html",sar=sar,files_info=fid,files_info_date=fid,
+                           files_info_file=fif,main_record_file=mr,gp_users=get_gp_users())
 @app.route("/complete/<sid>")
 @require_login
 def complete(sid):
@@ -704,7 +707,8 @@ def get_candidates(sid):
     return jsonify({"candidates":[
         {"id":c.id,"text":c.text,"category":c.category.value,"status":c.status.value,
          "confidence":c.confidence,"page_num":c.page_num,"x0":c.x0,"y0":c.y0,"x1":c.x1,"y1":c.y1,
-         "reason":c.reason,"exemption_code":c.exemption_code,"risk_flags":c.risk_flags,"source_file":c.source_file}
+         "reason":c.reason,"exemption_code":c.exemption_code,"risk_flags":c.risk_flags,
+         "source_file":c.source_file,"context":getattr(c,"context","")}
         for c in sar.candidates if not sf or c.source_file==sf]})
 @app.route("/api/sar/<sid>/main_record",methods=["POST"])
 @require_login
@@ -741,6 +745,36 @@ def page_dims_route(sid, filename, pn):
     if not pp: return jsonify({"error": "File not found"}), 404
     w, h = get_page_dimensions(pp, pn)
     return jsonify({"width": w, "height": h})
+# ── Presence (who else has this SAR open) ──────────────────────────────────
+_presence: dict[str, dict[str, dict]] = {}
+_presence_lock = threading.Lock()
+@app.route("/api/sar/<sid>/presence",methods=["POST"])
+@require_login
+def presence_heartbeat(sid):
+    now=time.time()
+    with _presence_lock:
+        viewers=_presence.setdefault(sid,{})
+        viewers[g.current_user.id]={"name":g.current_user.display_name,"ts":now}
+        # Drop stale viewers (no heartbeat for 90s) and report the others
+        for uid in [u for u,v in viewers.items() if now-v["ts"]>90]:
+            viewers.pop(uid,None)
+        others=sorted(v["name"] for uid,v in viewers.items() if uid!=g.current_user.id)
+    return jsonify({"others":others})
+
+# ── Redacted-output preview (before/after on the complete page) ────────────
+@app.route("/api/sar/<sid>/output-page-image/<filename>/<int:pn>")
+@require_login
+def output_page_image(sid,filename,pn):
+    fp=os.path.join(OUTPUT_DIR,sid,secure_filename(filename))
+    if not os.path.exists(fp): return "File not found",404
+    return Response(render_page_image(fp,pn),mimetype="image/png")
+@app.route("/api/sar/<sid>/output-page-count/<filename>")
+@require_login
+def output_page_count(sid,filename):
+    fp=os.path.join(OUTPUT_DIR,sid,secure_filename(filename))
+    if not os.path.exists(fp): return jsonify({"error":"File not found"}),404
+    return jsonify({"page_count":get_page_count(fp)})
+
 @app.route("/api/sar/<sid>/candidate/<cid>/update",methods=["POST"])
 @require_login
 def update_candidate(sid,cid):

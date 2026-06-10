@@ -105,6 +105,30 @@
     {% endif %}
   </div>
 </div>
+<!-- Before/after preview modal -->
+<div class="modal-overlay hidden" id="preview-modal" onclick="if(event.target===this)closePreview()">
+  <div class="modal" style="max-width:92vw;width:92vw;max-height:92vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div class="modal-title" style="margin:0;font-size:13px;" id="pv-title"></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-sm" onclick="pvPage(-1)" title="Previous page (←)">‹</button>
+        <span id="pv-ind" style="font-family:var(--mono);font-size:11px;color:var(--t4);min-width:54px;text-align:center;">1 / 1</span>
+        <button class="btn-sm" onclick="pvPage(1)" title="Next page (→)">›</button>
+        <button class="btn-sm" onclick="closePreview()" title="Close (Esc)">✕</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto;flex:1;">
+      <div>
+        <div class="mono-label" style="margin-bottom:6px;">Original</div>
+        <img id="pv-orig" style="width:100%;border:1px solid var(--border);border-radius:var(--r-sm);background:#fff;" alt="Original page">
+      </div>
+      <div>
+        <div class="mono-label" style="margin-bottom:6px;color:var(--green);">Redacted (as disclosed)</div>
+        <img id="pv-red" style="width:100%;border:1px solid var(--green);border-radius:var(--r-sm);background:#fff;" alt="Redacted page">
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -125,7 +149,10 @@ fetch('/api/sar/' + SAR_ID + '/outputs')
     list.innerHTML = allFiles.map(fn => `
       <div class="file-row">
         <div><div class="file-row-name">${fn}</div><div class="file-row-meta">${fn.endsWith('_redacted.pdf') ? 'Redacted PDF' : 'Audit log'}</div></div>
-        <a href="/api/sar/${SAR_ID}/download/${fn}" class="btn-sm" download>↓ Download</a>
+        <div style="display:flex;gap:6px;">
+          ${fn.endsWith('_redacted.pdf') ? `<button class="btn-sm" onclick="openPreview('${fn.replace(/'/g, "\\'")}')" title="Compare original and redacted pages side by side">⇄ Before/After</button>` : ''}
+          <a href="/api/sar/${SAR_ID}/download/${fn}" class="btn-sm" download>↓ Download</a>
+        </div>
       </div>`).join('');
     document.getElementById('download-all-btn').style.display = 'inline-flex';
   })
@@ -134,6 +161,45 @@ fetch('/api/sar/' + SAR_ID + '/outputs')
   });
 
 function downloadAll() { window.location.href = '/api/sar/' + SAR_ID + '/download-all'; }
+
+// ── Before/after preview ────────────────────────────────────────────────────
+let pv = { file: null, page: 0, total: 1 };
+
+async function openPreview(fn) {
+  pv.file = fn; pv.page = 0; pv.total = 1;
+  try {
+    const d = await fetch(`/api/sar/${SAR_ID}/output-page-count/${encodeURIComponent(fn)}`).then(r => r.json());
+    pv.total = d.page_count || 1;
+  } catch {}
+  document.getElementById('preview-modal').classList.remove('hidden');
+  renderPreview();
+}
+
+function renderPreview() {
+  const orig = pv.file.replace(/_redacted\.pdf$/, '.pdf');
+  const origImg = document.getElementById('pv-orig');
+  origImg.src = `/api/sar/${SAR_ID}/page-image/${encodeURIComponent(orig)}/${pv.page}`;
+  origImg.onerror = () => { origImg.alt = 'Original page unavailable'; };
+  document.getElementById('pv-red').src =
+    `/api/sar/${SAR_ID}/output-page-image/${encodeURIComponent(pv.file)}/${pv.page}`;
+  document.getElementById('pv-ind').textContent = `${pv.page + 1} / ${pv.total}`;
+  document.getElementById('pv-title').textContent = pv.file;
+}
+
+function pvPage(delta) {
+  const n = pv.page + delta;
+  if (n < 0 || n >= pv.total) return;
+  pv.page = n;
+  renderPreview();
+}
+
+function closePreview() { document.getElementById('preview-modal').classList.add('hidden'); }
+document.addEventListener('keydown', e => {
+  if (document.getElementById('preview-modal').classList.contains('hidden')) return;
+  if (e.key === 'Escape') closePreview();
+  if (e.key === 'ArrowRight') pvPage(1);
+  if (e.key === 'ArrowLeft') pvPage(-1);
+});
 
 function saveNotes() {
   const notes = document.getElementById('notes-ta').value;

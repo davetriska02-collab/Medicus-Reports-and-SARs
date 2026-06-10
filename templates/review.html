@@ -26,6 +26,10 @@ body { overflow: hidden; }
     {% elif sar.workflow_status == 'in_review' %}<span class="pill pill-reviewing">In Review</span>
     {% else %}<span class="pill pill-new">New</span>{% endif %}
     {% if sar.clock_paused %}<span class="pill pill-paused">Clock Paused</span>{% endif %}
+    {% if sar.allocated_to and current_user and sar.allocated_to != current_user.id %}
+    <span class="pill" style="background:var(--amber);color:#1a1a1a;" title="This SAR is allocated to another reviewer">Allocated: {{ sar.allocated_to_name }}</span>
+    {% endif %}
+    <span class="pill" id="presence-chip" style="display:none;background:var(--amber);color:#1a1a1a;" title="Someone else has this SAR open right now"></span>
   </div>
 
   <div class="toolbar-centre">
@@ -110,6 +114,7 @@ body { overflow: hidden; }
         <button class="btn-sm" id="filter-flagged" onclick="setFilter('flagged')" title="Flagged">⚑</button>
         <button class="btn-sm" id="filter-auto" onclick="setFilter('auto_redact')" title="Auto">✓</button>
         <button class="btn-sm" id="filter-pending" onclick="setFilter('pending')" title="Pending">○</button>
+        <button class="btn-sm" id="group-btn" title="Group occurrences by name — review each person once">⊟ Group</button>
       </div>
     </div>
     <div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap;align-items:center;">

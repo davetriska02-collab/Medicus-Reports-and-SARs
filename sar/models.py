@@ -70,6 +70,7 @@ class RedactionCandidate:
     exemption_code: str = ""
     risk_flags: list = field(default_factory=list)
     source_file: str = ""
+    context: str = ""   # surrounding page text captured at detection time
 
 
 @dataclass

@@ -11,6 +11,13 @@ const STATUS_LABEL = {
 
 const REVIEWED_STATUSES = new Set(['auto_redact','approved','rejected','excluded_subject','excluded_staff']);
 
+// PDF text is attacker-controlled (it arrives in uploaded documents) —
+// always escape before inserting into innerHTML.
+function _esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
 export class CandidateManager {
   constructor(listEl, progressEl, reviewedLabelEl, onAction) {
     this.listEl      = listEl;
@@ -22,6 +29,12 @@ export class CandidateManager {
     this._activeId   = null;
     this._filter     = { status: null, search: '' };
     this._sort       = 'page';
+    this._grouped    = false;
+  }
+
+  setGrouped(grouped) {
+    this._grouped = grouped;
+    this.renderList();
   }
 
   setCandidates(candidates) {
@@ -72,10 +85,73 @@ export class CandidateManager {
       this.listEl.innerHTML = '<div style="text-align:center;padding:28px 12px;color:var(--t5);font-size:12px;">No candidates match the current filter.</div>';
       return;
     }
+    if (this._grouped) { this._renderGrouped(); return; }
     const frag = document.createDocumentFragment();
     for (const c of this._filtered) frag.appendChild(this._makeCard(c));
     this.listEl.innerHTML = '';
     this.listEl.appendChild(frag);
+  }
+
+  // ── Grouped (by-name) view ──────────────────────────────────────────────
+  // "Jane Doe — 12 occurrences across 4 documents: Redact all / Keep all"
+  _renderGrouped() {
+    const groups = new Map();
+    for (const c of this._filtered) {
+      const key = `${c.category}|${c.text.trim().toLowerCase()}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(c);
+    }
+    const sorted = [...groups.values()].sort((a, b) => b.length - a.length);
+    const frag = document.createDocumentFragment();
+    for (const items of sorted) frag.appendChild(this._makeGroupCard(items));
+    this.listEl.innerHTML = '';
+    this.listEl.appendChild(frag);
+  }
+
+  _makeGroupCard(items) {
+    const c0 = items[0];
+    const files = new Set(items.map(c => c.source_file));
+    const counts = {};
+    for (const c of items) counts[c.status] = (counts[c.status] || 0) + 1;
+    const summary = Object.entries(counts)
+      .map(([s, n]) => `${n} ${STATUS_LABEL[s] || s}`).join(' · ');
+
+    const div = document.createElement('div');
+    div.className = 'candidate-card group-card';
+    div.innerHTML = `
+      <div class="cand-header">
+        <span class="cand-cat">${_esc(c0.category.replace(/_/g,' '))}</span>
+        <span class="cand-conf">×${items.length}</span>
+      </div>
+      <div class="cand-text" title="${_esc(c0.text)}">${_esc(_truncate(c0.text, 60))}</div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--t5);margin-bottom:4px;">
+        ${items.length} occurrence${items.length !== 1 ? 's' : ''} · ${files.size} file${files.size !== 1 ? 's' : ''} · ${_esc(summary)}
+      </div>
+      <div class="group-occs">${items.slice(0, 30).map(c =>
+        `<span class="group-occ status-${_esc(c.status)}" data-cid="${_esc(c.id)}" title="${_esc(c.source_file)} p${c.page_num + 1}">p${c.page_num + 1}</span>`
+      ).join('')}${items.length > 30 ? `<span class="group-occ">+${items.length - 30}</span>` : ''}</div>
+      <div class="cand-actions">
+        <button class="cand-btn cand-btn-approve" data-gaction="approved">Redact all</button>
+        <button class="cand-btn cand-btn-reject"  data-gaction="rejected">Keep all</button>
+      </div>`;
+
+    div.querySelectorAll('.group-occ[data-cid]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        const c = this._all.find(x => x.id === el.dataset.cid);
+        if (!c) return;
+        this._activeId = c.id;
+        this.onAction({ candidateId: c.id, action: 'select', candidate: c });
+      });
+    });
+    div.querySelectorAll('button[data-gaction]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        this.onAction({ action: 'group', text: c0.text, status: btn.dataset.gaction,
+                        count: items.length });
+      });
+    });
+    return div;
   }
 
   _makeCard(c) {
@@ -86,10 +162,11 @@ export class CandidateManager {
     const confPct = Math.round((c.confidence || 0) * 100);
     div.innerHTML = `
       <div class="cand-header">
-        <span class="cand-cat">${c.category.replace(/_/g,' ')}</span>
+        <span class="cand-cat">${_esc(c.category.replace(/_/g,' '))}</span>
         <span class="cand-conf">${confPct}%${hasRisk ? ' ⚑' : ''}</span>
       </div>
-      <div class="cand-text${hasRisk ? ' risk' : ''}" title="${c.text}">${_truncate(c.text, 80)}</div>
+      <div class="cand-text${hasRisk ? ' risk' : ''}" title="${_esc(c.text)}">${_esc(_truncate(c.text, 80))}</div>
+      ${c.context ? `<div class="cand-context" title="${_esc(c.context)}">${_esc(_truncate(c.context, 130))}</div>` : ''}
       <div style="font-family:var(--mono);font-size:9px;color:var(--t5);margin-bottom:6px;">p${c.page_num + 1}</div>
       <div class="cand-actions">
         <button class="cand-btn cand-btn-approve${c.status==='approved'?' sel':''}" data-action="approved">Approve</button>

@@ -117,6 +117,13 @@ def test_staff_label_context_excludes_practitioner():
     assert staff is not None and staff.status == RedactionStatus.EXCLUDED_STAFF
 
 
+def test_context_snippet_captured():
+    spans = _spans_for_lines(["Seen with daughter Emma Watson at the clinic today."])
+    cands = detect_pii("unused.pdf", spans, SUBJECT, "doc.pdf")
+    emma = next(c for c in cands if "Emma Watson" in c.text)
+    assert "daughter" in emma.context and "clinic" in emma.context
+
+
 def test_address_house_number_anchoring():
     # Same street, different number → NOT the subject's address
     assert not is_subject_match("14 High Street Guildford", SUBJECT)

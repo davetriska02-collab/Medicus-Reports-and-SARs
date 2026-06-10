@@ -214,8 +214,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     viewer.highlightCandidate(cid);
   });
 
+  // ── Grouped (by-name) review mode ──────────────────────────────────────────
+  const groupBtn = $('#group-btn');
+  let grouped = false;
+  groupBtn?.addEventListener('click', () => {
+    grouped = !grouped;
+    groupBtn.classList.toggle('active', grouped);
+    cmgr.setGrouped(grouped);
+  });
+
+  // ── Presence: show who else has this SAR open ──────────────────────────────
+  async function presenceHeartbeat() {
+    try {
+      const res = await fetch(`/api/sar/${sarId}/presence`, { method: 'POST' });
+      if (!res.ok) return;
+      const d = await res.json();
+      const chip = $('#presence-chip');
+      if (!chip) return;
+      if (d.others && d.others.length) {
+        chip.textContent = `👁 ${d.others.join(', ')} also viewing`;
+        chip.style.display = 'inline-flex';
+      } else {
+        chip.style.display = 'none';
+      }
+    } catch {}
+  }
+  presenceHeartbeat();
+  setInterval(presenceHeartbeat, 20000);
+
   // ── Candidate actions ──────────────────────────────────────────────────────
-  async function onCandidateAction({ candidateId, action, status, candidate }) {
+  async function onCandidateAction({ candidateId, action, status, candidate, text, count }) {
+    if (action === 'group') {
+      const verb = status === 'approved' ? 'Redact' : 'Keep';
+      if (!confirm(`${verb} all ${count} occurrences of "${text}"?`)) return;
+      try {
+        await api.batchByText(sarId, text, status);
+        await loadCandidates();
+        viewer.drawOverlay(cmgr.getAll());
+      } catch (e) {
+        alert('Bulk update failed: ' + e.message);
+      }
+      return;
+    }
     if (action === 'select') {
       viewer.highlightCandidate(candidateId);
       // If on different page/file, jump

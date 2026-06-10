@@ -25,8 +25,8 @@ export function initShortcuts(callbacks) {
       case 'x': case 'X': excludeSubject?.(); break;
       case 't': case 'T': excludeStaff?.(); break;
       case 'f': case 'F': flag?.(); break;
-      case 's': case 'S': case 'ArrowRight': next?.(); break;
-      case 'ArrowLeft': prev?.(); break;
+      case 's': case 'S': case 'j': case 'J': case 'ArrowRight': next?.(); break;
+      case 'k': case 'K': case 'ArrowLeft': prev?.(); break;
       case '+': case '=': zoomIn?.(); break;
       case '-': case '_': zoomOut?.(); break;
       case 'd': case 'D': drawMode?.(); break;

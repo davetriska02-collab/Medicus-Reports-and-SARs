@@ -58,19 +58,37 @@ def fetch_embed_python(staging: Path):
     print(f"      {len(data)//1024//1024} MB extracted, {pth.name} patched")
 
 
+# Pure-Python dependencies that ship only an sdist on PyPI (no wheel), which
+# --only-binary rejects. They are built into universal py3-none-any wheels
+# locally (--use-pep517 sidesteps a Debian setuptools bug) and offered to the
+# Windows resolve via --find-links. extract-msg -> red-black-tree-mod.
+SDIST_ONLY_PURE = ("red-black-tree-mod",)
+
+
 def install_wheels(staging: Path, with_tls: bool):
     print("[2/4] Installing Windows wheels into the runtime...")
     target = staging / "python-runtime" / "Lib" / "site-packages"
+    wheels = staging / "wheels"
+    subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "--quiet", "--use-pep517",
+         "--no-deps", "-w", str(wheels), *SDIST_ONLY_PURE], check=True)
+    for w in wheels.iterdir():
+        if not w.name.endswith("-py3-none-any.whl") and \
+           not w.name.endswith("-py2.py3-none-any.whl"):
+            raise SystemExit(f"{w.name} is not a universal wheel — it cannot "
+                             "be shipped in the Windows bundle")
     cmd = [
         sys.executable, "-m", "pip", "install",
         "--quiet", "--no-compile", "--target", str(target),
         "--platform", "win_amd64", "--implementation", "cp",
         "--python-version", "312", "--only-binary=:all:",
+        "--find-links", str(wheels),
         "-r", str(REPO / "requirements.txt"),
     ]
     if with_tls:
         cmd += ["cheroot", "cryptography"]
     subprocess.run(cmd, check=True)
+    shutil.rmtree(wheels)
     n = sum(1 for _ in target.iterdir())
     print(f"      {n} top-level packages installed")
 

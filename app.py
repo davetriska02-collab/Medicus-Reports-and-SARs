@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -31,6 +31,8 @@ from sar.users import (get_user_by_id, authenticate, create_user, get_all_users,
                         get_user_by_username, UsersFileCorrupt)
 from sar.fsutil import atomic_write_json, unique_path
 from sar.audit import log_event as _audit_event, read_events as _audit_read, known_actions as _audit_actions
+from sar import store as _store
+from sar.backup import start_backup_thread as _start_backup_thread, get_status as _backup_status
 
 _SERVER_STARTED = datetime.now(timezone.utc)
 
@@ -117,10 +119,10 @@ def _emit(q, progress, step):
 # Paths
 UPLOAD_DIR  = str(BASE_DIR / "uploads")
 OUTPUT_DIR  = str(BASE_DIR / "output")
-SAR_DATA_DIR= str(BASE_DIR / "data" / "sars")
+SAR_DATA_DIR= str(BASE_DIR / "data" / "sars")   # legacy JSON dir, migrated to db
 REPORT_UPLOAD_DIR = str(BASE_DIR / "uploads" / "reports")
 REPORT_OUTPUT_DIR = str(BASE_DIR / "output" / "reports")
-for _d in (UPLOAD_DIR, OUTPUT_DIR, SAR_DATA_DIR, REPORT_UPLOAD_DIR, REPORT_OUTPUT_DIR):
+for _d in (UPLOAD_DIR, OUTPUT_DIR, REPORT_UPLOAD_DIR, REPORT_OUTPUT_DIR):
     os.makedirs(_d, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {"pdf","tif","tiff","rtf","txt","zip","png","jpg","jpeg","html","htm","cdax"}
@@ -200,80 +202,66 @@ def _to_dict(sar):
 def _save(sar):
     with _lock_for(sar.id):
         sar.last_modified = datetime.now(timezone.utc).isoformat()
-        atomic_write_json(os.path.join(SAR_DATA_DIR, f"{sar.id}.json"), _to_dict(sar))
+        _store.save_sar_doc(_to_dict(sar))
+
+def _sar_from_dict(data):
+    sid = data["id"]
+    subj = SubjectDetails(**data["subject"])
+    cands = [RedactionCandidate(
+        id=c["id"],text=c["text"],category=PIICategory(c["category"]),
+        status=RedactionStatus(c["status"]),confidence=c["confidence"],
+        page_num=c["page_num"],x0=c["x0"],y0=c["y0"],x1=c["x1"],y1=c["y1"],
+        reason=c["reason"],exemption_code=c.get("exemption_code",""),
+        risk_flags=c.get("risk_flags",[]),source_file=c["source_file"])
+        for c in data["candidates"]]
+    pdf_files = [_resolve_path(sid, p) for p in data["pdf_files"]]
+    sar = SARRequest(
+        id=sid, created_at=data.get("created_at",""),
+        last_modified=data.get("last_modified",""),
+        subject=subj, pdf_files=pdf_files, candidates=cands,
+        status=data["status"], due_date=data.get("due_date",""),
+        notes=data.get("notes",""), workflow_status=data.get("workflow_status","new"),
+        allocated_to=data.get("allocated_to",""),
+        allocated_to_name=data.get("allocated_to_name",""),
+        document_dates=data.get("document_dates",{}),
+        file_order=data.get("file_order",[]),
+        main_record_file=data.get("main_record_file",""),
+        clock_paused=data.get("clock_paused",False),
+        paused_at=data.get("paused_at",""),
+        total_paused_days=data.get("total_paused_days",0),
+        pause_log=data.get("pause_log",[]),
+    )
+    sar.archived = data.get("archived", False)
+    sar.redaction_failures = data.get("redaction_failures", [])
+    ds = data.get("detection_settings")
+    if ds:
+        sar.detection_settings = DetectionSettings(
+            auto_redact_threshold=ds.get("auto_redact_threshold",0.80),
+            flag_threshold=ds.get("flag_threshold",0.50),
+            enabled_categories=ds.get("enabled_categories",DetectionSettings().enabled_categories))
+    if not sar.due_date: sar.compute_due_date()
+    for c in cands:
+        if not c.risk_flags and c.text: c.risk_flags = check_text_for_risk(c.text)
+    return sar
 
 def _load_all():
-    for fname in os.listdir(SAR_DATA_DIR):
-        if not fname.endswith(".json"): continue
+    for data in _store.load_all_sar_docs():
         try:
-            with open(os.path.join(SAR_DATA_DIR, fname)) as f: data = json.load(f)
-            sid = data["id"]
-            subj = SubjectDetails(**data["subject"])
-            cands = [RedactionCandidate(
-                id=c["id"],text=c["text"],category=PIICategory(c["category"]),
-                status=RedactionStatus(c["status"]),confidence=c["confidence"],
-                page_num=c["page_num"],x0=c["x0"],y0=c["y0"],x1=c["x1"],y1=c["y1"],
-                reason=c["reason"],exemption_code=c.get("exemption_code",""),
-                risk_flags=c.get("risk_flags",[]),source_file=c["source_file"])
-                for c in data["candidates"]]
-            pdf_files = [_resolve_path(sid, p) for p in data["pdf_files"]]
-            sar = SARRequest(
-                id=sid, created_at=data.get("created_at",""),
-                last_modified=data.get("last_modified",""),
-                subject=subj, pdf_files=pdf_files, candidates=cands,
-                status=data["status"], due_date=data.get("due_date",""),
-                notes=data.get("notes",""), workflow_status=data.get("workflow_status","new"),
-                allocated_to=data.get("allocated_to",""),
-                allocated_to_name=data.get("allocated_to_name",""),
-                document_dates=data.get("document_dates",{}),
-                file_order=data.get("file_order",[]),
-                main_record_file=data.get("main_record_file",""),
-                clock_paused=data.get("clock_paused",False),
-                paused_at=data.get("paused_at",""),
-                total_paused_days=data.get("total_paused_days",0),
-                pause_log=data.get("pause_log",[]),
-            )
-            sar.archived = data.get("archived", False)
-            sar.redaction_failures = data.get("redaction_failures", [])
-            ds = data.get("detection_settings")
-            if ds:
-                sar.detection_settings = DetectionSettings(
-                    auto_redact_threshold=ds.get("auto_redact_threshold",0.80),
-                    flag_threshold=ds.get("flag_threshold",0.50),
-                    enabled_categories=ds.get("enabled_categories",DetectionSettings().enabled_categories))
-            if not sar.due_date: sar.compute_due_date()
-            for c in cands:
-                if not c.risk_flags and c.text: c.risk_flags = check_text_for_risk(c.text)
-            active_requests[sid] = sar
+            sar = _sar_from_dict(data)
+            active_requests[sar.id] = sar
         except Exception:
-            logging.getLogger("sar").warning("Could not load %s", fname, exc_info=True)
+            logging.getLogger("sar").warning(
+                "Could not load SAR %s", data.get("id", "?"), exc_info=True)
 
 
-def _migrate_absolute_paths():
-    """One-time migration: rewrite any v1 absolute pdf_file paths to basenames.
-    Runs at startup, silently skips SARs that are already clean.
-    """
-    migrated = 0
-    for fname in os.listdir(SAR_DATA_DIR):
-        if not fname.endswith(".json"):
-            continue
-        path = os.path.join(SAR_DATA_DIR, fname)
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            original = data.get("pdf_files", [])
-            cleaned = [os.path.basename(p) for p in original]
-            if cleaned != original:
-                data["pdf_files"] = cleaned
-                atomic_write_json(path, data)
-                migrated += 1
-        except Exception:
-            pass
-    if migrated:
-        print(f"[startup] Migrated {migrated} SAR(s) from absolute to relative paths.")
-
-_migrate_absolute_paths()
+# One-time migration of legacy JSON folders into the SQLite store
+_n = _store.migrate_json_dir(SAR_DATA_DIR, "sar")
+_n += _store.migrate_json_dir(str(BASE_DIR / "data" / "reports"), "report")
+if _n:
+    print(f"[startup] Migrated {_n} record(s) from JSON files to data/sarredact.db")
 _load_all()
+_start_backup_thread(_get_practice_config,
+                     lambda action, detail="": _audit_event(action, detail=detail))
 
 # Converters (unchanged from v1)
 def _tif_to_pdf(p):
@@ -358,12 +346,33 @@ def _extract_zip(zip_path, sar_dir, emit_fn=None):
     return result
 
 # Auth
+def _idle_timeout_s() -> int:
+    try:
+        return max(0, int(_get_practice_config().get("idle_timeout_minutes", "30"))) * 60
+    except (TypeError, ValueError):
+        return 30 * 60
+
 @app.before_request
 def load_user():
     g.current_user=None
     try:
         uid=session.get("user_id")
         if uid: g.current_user=get_user_by_id(uid)
+        if g.current_user and request.endpoint != "static":
+            # Idle timeout — shared NHS workstations must not stay signed in
+            limit=_idle_timeout_s()
+            last=session.get("_last_seen", 0)
+            now=int(time.time())
+            if limit and last and now-last > limit:
+                session.pop("user_id",None); session.pop("_last_seen",None)
+                _audit_event("session_expired", user_id=g.current_user.id,
+                             username=g.current_user.username,
+                             ip=request.remote_addr or "")
+                g.current_user=None
+                if request.path.startswith("/api/"):
+                    return jsonify({"error":"Session expired — sign in again"}),401
+                return redirect(url_for("login"))
+            session["_last_seen"]=now
         no_users = not users_file_exists()
     except UsersFileCorrupt:
         # A corrupt users file must lock the app down — NOT fall through to
@@ -928,7 +937,8 @@ def _do_import(buf,sd):
                 bn=os.path.basename(name)
                 if bn:
                     with zf.open(name) as src, open(os.path.join(sdir,bn),"wb") as dst: dst.write(src.read())
-    atomic_write_json(os.path.join(SAR_DATA_DIR,f"{sid2}.json"),sd)
+    sd["pdf_files"]=[os.path.basename(p) for p in sd.get("pdf_files",[])]
+    _store.save_sar_doc(sd)
     _load_all()
 
 # Manual redact, delete, archive, notes
@@ -953,8 +963,7 @@ def delete_sar(sid):
     if not sar: return jsonify({"error":"Not found"}),404
     for d in [os.path.join(UPLOAD_DIR,sid),os.path.join(OUTPUT_DIR,sid)]:
         if os.path.isdir(d): shutil.rmtree(d)
-    jp=os.path.join(SAR_DATA_DIR,f"{sid}.json")
-    if os.path.exists(jp): os.remove(jp)
+    _store.delete_sar_doc(sid)
     _del(sid)
     _audit("sar_deleted", target=sid, detail=sar.subject.full_name)
     return jsonify({"ok":True})
@@ -1341,6 +1350,7 @@ def admin_status():
         "data_dir_mb":round(_dir_size(str(BASE_DIR/"data"))/1e6,1),
         "uploads_dir_mb":round(_dir_size(UPLOAD_DIR)/1e6,1),
         "pending_jobs":len(_job_queues),
+        "backup":_backup_status(),
     })
 
 @app.errorhandler(403)

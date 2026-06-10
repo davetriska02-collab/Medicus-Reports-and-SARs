@@ -75,20 +75,50 @@ dependencies pre-included (no internet required at all — ~300 MB zip).
 
 ---
 
-## Network / multi-user setup
+## Network / multi-user setup (central server)
 
-Run on one dedicated machine. The startup banner shows your LAN IP address.
-All other machines on the same network can access SAR Redact at:
+Run SAR Redact on one dedicated machine; everyone else uses a browser.
+
+**Quick way:** run `start_server.bat` and share the addresses shown in the
+banner (also written to `CONNECT.txt`).
+
+**Proper way — install as a server (no admin rights needed):**
+
+1. Run `start_server.bat` once so Python and dependencies install
+2. Run `install_as_server.bat`
+
+This registers the server to start automatically (minimised) every time the
+user logs on, with an automatic restart if it ever crashes, and writes
+`CONNECT.txt` with the addresses to share with staff:
 
 ```
-http://<IP address>:5000
+http://<hostname>:5000      e.g. http://RECEPTION-PC2:5000
 ```
 
-No software needed on the other machines — just a browser.
+### Nightly backups
+
+In **Settings**, set *Backup folder* to a NAS share or synced folder
+(e.g. `\\practice-nas\backups\sarredact`). A backup zip is written daily —
+database, configuration, audit trail and documents — keeping the last 7.
+Backup status is visible at `/admin/status`.
+
+### HTTPS (optional, recommended for server mode)
+
+Waitress serves plain HTTP. To enable TLS — still without admin rights:
+
+1. `pip install cheroot cryptography` (using the same Python as SAR Redact)
+2. `python tools\generate_cert.py`
+3. Restart the server — it detects `data/tls/cert.pem` and switches to HTTPS
+
+The certificate is self-signed, so browsers show a one-time warning that
+staff can accept (or IT can trust the cert centrally via group policy).
 
 ---
 
 ## Data location
 
-All patient data is stored in the `data\` subfolder of the SAR Redact directory.
-Back this up regularly. Nothing is stored remotely.
+All patient data is stored in the `data\` subfolder of the SAR Redact
+directory (`data\sarredact.db` plus configuration files and the audit
+trail in `data\audit\`). Uploaded and redacted documents live in
+`uploads\` and `output\`. Nothing is stored remotely — set a backup
+folder in Settings (above) for automatic nightly backups.

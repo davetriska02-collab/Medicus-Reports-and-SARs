@@ -16,6 +16,11 @@ DEFAULTS = {
     "sar_officer_email": "",
     "sar_officer_gmc":  "",
     "footer_text":      "",
+    # Server mode: nightly backup destination (NAS share / synced folder).
+    # Empty = backups disabled.
+    "backup_dir":       "",
+    # Minutes of inactivity before a session is signed out (0 = disabled)
+    "idle_timeout_minutes": "30",
 }
 
 

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ report.patient.full_name }} Report — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+  <div>
+    <a href="/reports" class="page-header-back">← Reports</a>
+    <h1>{{ report.patient.full_name }}</h1>
+    <div class="heading-rule"></div>
+    <div style="font-size:12px;color:var(--t3);margin-top:6px;">{{ report.template_name }}
+      &nbsp;·&nbsp; {{ report.created_at[:10] }}
+      {% if report.created_by_name %}&nbsp;·&nbsp; {{ report.created_by_name }}{% endif %}
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+    {% if report.status == 'complete' %}<span class="pill pill-complete">Complete</span>
+    {% else %}<span class="pill pill-reviewing">In progress</span>{% endif %}
+    {% if current_user and current_user.role == 'admin' %}
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-ghost" onclick="reExtract()">Re-extract evidence</button>
+      <button class="btn btn-primary" id="gen-btn" onclick="generatePdf()">Generate PDF</button>
+    </div>
+    <div id="dl-link" style="display:none;"></div>
+    {% endif %}
+  </div>
+</div>
+
+{% if report.keyword_flags %}
+<div class="alert alert-info" style="margin-bottom:20px;">
+  ⚑ Keyword flags found: {{ report.keyword_flags | join(', ') }}
+</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:1fr 260px;gap:20px;align-items:start;">
+  <div>
+    {% for a in report.answers %}
+    <div class="question-card" id="q-{{ a.question_id }}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;">
+        <div class="question-text">{{ a.question_text }}</div>
+        <label class="check-row" style="flex-shrink:0;white-space:nowrap;">
+          <input type="checkbox" {% if a.reviewed %}checked{% endif %} onchange="saveAnswer('{{ a.question_id }}', this.checked)">
+          Reviewed
+        </label>
+      </div>
+      {% if a.question_type == 'yes_no' %}
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button class="btn-sm {% if a.answer == 'Yes' %}active{% endif %}" onclick="setYesNo('{{ a.question_id }}', 'Yes')">Yes</button>
+        <button class="btn-sm {% if a.answer == 'No' %}active{% endif %}" onclick="setYesNo('{{ a.question_id }}', 'No')">No</button>
+        <button class="btn-sm {% if a.answer == 'Not applicable' %}active{% endif %}" onclick="setYesNo('{{ a.question_id }}', 'Not applicable')">N/A</button>
+      </div>
+      {% elif a.options %}
+      <select class="toolbar-select" style="width:100%;height:34px;margin-bottom:10px;" onchange="saveAnswerText('{{ a.question_id }}', this.value)">
+        <option value="">— Select —</option>
+        {% for opt in a.options %}<option value="{{ opt }}" {% if a.answer == opt %}selected{% endif %}>{{ opt }}</option>{% endfor %}
+      </select>
+      {% else %}
+      <div class="question-answer">
+        <textarea id="ans-{{ a.question_id }}" rows="4">{{ a.answer or '' }}</textarea>
+      </div>
+      {% endif %}
+      {% if a.evidence %}
+      <div class="evidence-chips">
+        {% for ev in a.evidence[:4] %}
+        <div class="evidence-chip" title="{{ ev.text }}">{{ ev.text[:80] }}{% if ev.text|length > 80 %}…{% endif %}</div>
+        {% endfor %}
+        {% if a.evidence|length > 4 %}<div class="evidence-chip">+{{ a.evidence|length - 4 }} more</div>{% endif %}
+      </div>
+      {% endif %}
+      <div style="margin-top:10px;display:flex;gap:6px;align-items:center;">
+        <button class="btn-sm" onclick="saveAnswerFromTextarea('{{ a.question_id }}')">Save</button>
+        <span class="save-indicator" id="saved-{{ a.question_id }}" style="font-size:11px;color:var(--green);display:none;">Saved</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><span class="mono-label">Documents</span></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:6px;">
+        {% for fi in files_info %}
+        <div style="font-size:12px;color:var(--t2);">{{ fi.name }}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--t4);">{{ fi.pages }}pp{% if fi.date %} · {{ fi.date }}{% endif %}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if report.patient.nhs_number or report.patient.date_of_birth %}
+    <div class="card">
+      <div class="card-header"><span class="mono-label">Patient</span></div>
+      <div class="card-body" style="font-size:12px;color:var(--t3);display:flex;flex-direction:column;gap:4px;">
+        {% if report.patient.nhs_number %}<div>NHS {{ report.patient.nhs_number }}</div>{% endif %}
+        {% if report.patient.date_of_birth %}<div>DOB {{ report.patient.date_of_birth }}</div>{% endif %}
+        {% if report.patient.gp_name %}<div>{{ report.patient.gp_name }}</div>{% endif %}
+        {% if report.patient.gp_practice %}<div>{{ report.patient.gp_practice }}</div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const REPORT_ID = "{{ report.id }}";
+
+function saveAnswerFromTextarea(qid) {
+  const ta = document.getElementById('ans-' + qid);
+  const reviewed = document.querySelector('#q-' + qid + ' input[type=checkbox]').checked;
+  if (ta) saveAnswerFull(qid, ta.value, reviewed);
+}
+
+function saveAnswer(qid, reviewed) {
+  const ta = document.getElementById('ans-' + qid);
+  saveAnswerFull(qid, ta ? ta.value : '', reviewed);
+}
+
+function saveAnswerText(qid, val) {
+  const reviewed = document.querySelector('#q-' + qid + ' input[type=checkbox]').checked;
+  saveAnswerFull(qid, val, reviewed);
+}
+
+function setYesNo(qid, val) {
+  document.querySelectorAll('#q-' + qid + ' button.btn-sm').forEach(b => { b.classList.toggle('active', b.textContent.trim() === val); });
+  const reviewed = document.querySelector('#q-' + qid + ' input[type=checkbox]').checked;
+  saveAnswerFull(qid, val, reviewed);
+}
+
+function saveAnswerFull(qid, answer, reviewed) {
+  fetch('/api/reports/' + REPORT_ID + '/answer', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({question_id: qid, answer, reviewed})
+  }).then(() => {
+    const el = document.getElementById('saved-' + qid);
+    el.style.display = 'inline';
+    setTimeout(() => el.style.display = 'none', 1800);
+  });
+}
+
+function reExtract() {
+  fetch('/api/reports/' + REPORT_ID + '/re-extract', { method: 'POST' })
+    .then(() => location.reload());
+}
+
+function generatePdf() {
+  document.getElementById('gen-btn').disabled = true;
+  document.getElementById('gen-btn').textContent = 'Generating…';
+  fetch('/api/reports/' + REPORT_ID + '/generate', { method: 'POST' })
+    .then(r => r.json()).then(d => {
+      if (d.ok) {
+        document.getElementById('dl-link').innerHTML = '<a href="/api/reports/' + REPORT_ID + '/download/' + d.filename + '" class="btn btn-primary" style="margin-top:8px;">↓ Download PDF</a>';
+        document.getElementById('dl-link').style.display = 'block';
+        document.getElementById('gen-btn').textContent = 'Regenerate';
+        document.getElementById('gen-btn').disabled = false;
+      }
+    });
+}
+</script>
+{% endblock %}

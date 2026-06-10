@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Help — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="margin-bottom:28px;">
+  <h1>Help</h1>
+  <div class="heading-rule"></div>
+</div>
+<div style="max-width:720px;">
+
+  <div class="help-section">
+    <h2>Workflow</h2>
+    <p>SAR Redact follows a five-step process. First, upload the patient's medical record (PDF, TIF, ZIP, RTF, or TXT). SAR Redact automatically detects personally identifiable information and classifies each instance. In the review screen, a GP approves, rejects, or excludes each candidate. An admin signs off the reviewed redactions and clicks Finalise. The system then generates the redacted PDF output, ready for disclosure.</p>
+  </div>
+
+  <div class="help-section">
+    <h2>Keyboard shortcuts</h2>
+    <table class="shortcut-table">
+      <tr><td><span class="kbd-hint">A</span></td><td>Approve current candidate</td></tr>
+      <tr><td><span class="kbd-hint">R</span></td><td>Reject (keep in record)</td></tr>
+      <tr><td><span class="kbd-hint">X</span></td><td>Exclude — subject's own data</td></tr>
+      <tr><td><span class="kbd-hint">T</span></td><td>Exclude — staff / clinician</td></tr>
+      <tr><td><span class="kbd-hint">F</span></td><td>Flag for review</td></tr>
+      <tr><td><span class="kbd-hint">S</span> / <span class="kbd-hint">→</span></td><td>Next candidate</td></tr>
+      <tr><td><span class="kbd-hint">←</span></td><td>Previous candidate</td></tr>
+      <tr><td><span class="kbd-hint">+</span></td><td>Zoom in</td></tr>
+      <tr><td><span class="kbd-hint">−</span></td><td>Zoom out</td></tr>
+      <tr><td><span class="kbd-hint">D</span></td><td>Toggle manual draw mode</td></tr>
+      <tr><td><span class="kbd-hint">L</span></td><td>Toggle category legend</td></tr>
+      <tr><td><span class="kbd-hint">N</span></td><td>Toggle page navigator</td></tr>
+      <tr><td><span class="kbd-hint">Esc</span></td><td>Close open panel / modal</td></tr>
+      <tr><td><span class="kbd-hint">Ctrl A</span></td><td>Approve all visible candidates</td></tr>
+      <tr><td><span class="kbd-hint">Ctrl R</span></td><td>Reject all visible candidates</td></tr>
+    </table>
+  </div>
+
+  <div class="help-section">
+    <h2>Redaction categories</h2>
+    <p><strong style="color:var(--t2);">Person name</strong> — patient's full name, first name, last name, and configured aliases. <strong style="color:var(--t2);">NHS number</strong> — 10-digit NHS identifier. <strong style="color:var(--t2);">Address</strong> — residential address and postcode. <strong style="color:var(--t2);">Date of birth</strong> — any date matching the subject's DOB. <strong style="color:var(--t2);">Phone</strong> — phone numbers. <strong style="color:var(--t2);">Email</strong> — email addresses. <strong style="color:var(--t2);">Safeguarding</strong> — high-sensitivity terms flagged for extra scrutiny. <strong style="color:var(--t2);">Custom word</strong> — phrases added in Settings.</p>
+  </div>
+
+  <div class="help-section">
+    <h2>File formats</h2>
+    <p>SAR Redact accepts PDF, TIF/TIFF, RTF, TXT, PNG, JPG, HTML, CDAX (GP2GP clinical documents), and ZIP archives containing any of the above. All formats are converted to PDF internally before analysis. Scanned PDFs may have lower detection accuracy than text-layer PDFs.</p>
+  </div>
+
+  <div class="help-section">
+    <h2>Workflow statuses</h2>
+    <table class="shortcut-table">
+      <tr><td><span class="pill pill-new">New</span></td><td>Uploaded and detected, awaiting allocation</td></tr>
+      <tr><td><span class="pill pill-reviewing">In Review</span></td><td>Allocated to a GP for candidate review</td></tr>
+      <tr><td><span class="pill pill-signoff">Sign-off</span></td><td>GP has submitted; awaiting admin approval</td></tr>
+      <tr><td><span class="pill pill-complete">Complete</span></td><td>Finalised and output files generated</td></tr>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

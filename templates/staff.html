@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Settings — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="margin-bottom:24px;">
+  <h1>Practice Settings</h1>
+  <div class="heading-rule"></div>
+</div>
+
+{% if current_user and current_user.role == 'admin' %}
+<!-- ── Practice configuration ───────────────────────────────────────────── -->
+<div id="practice" class="form-card" style="margin-bottom:24px;">
+  <div class="form-card-title">Practice Details</div>
+  <div class="form-card-hint">Used in audit logs, the navigation bar, and output documents. Set this before processing any SARs.</div>
+  <div class="form-grid">
+    <div class="form-group form-group-wide">
+      <label>Practice name <span class="required">*</span></label>
+      <input type="text" id="cfg-practice-name" value="{{ practice.practice_name }}" placeholder="e.g. Witley &amp; Milford Surgery">
+    </div>
+    <div class="form-group form-group-wide">
+      <label>Practice address</label>
+      <input type="text" id="cfg-practice-address" value="{{ practice.practice_address }}" placeholder="e.g. Petworth Road, Witley, GU8 5QW">
+    </div>
+    <div class="form-group">
+      <label>SAR officer name</label>
+      <input type="text" id="cfg-officer-name" value="{{ practice.sar_officer_name }}" placeholder="e.g. Dr D Triska">
+    </div>
+    <div class="form-group">
+      <label>Role / title</label>
+      <input type="text" id="cfg-officer-role" value="{{ practice.sar_officer_role }}" placeholder="e.g. Data Protection Lead">
+    </div>
+    <div class="form-group">
+      <label>SAR officer email</label>
+      <input type="email" id="cfg-officer-email" value="{{ practice.sar_officer_email }}" placeholder="e.g. dpo@surgery.nhs.uk">
+    </div>
+    <div class="form-group">
+      <label>GMC / NMC number</label>
+      <input type="text" id="cfg-officer-gmc" value="{{ practice.sar_officer_gmc }}" placeholder="e.g. GMC 6159481">
+    </div>
+    <div class="form-group form-group-wide">
+      <label>Footer text on output PDFs</label>
+      <input type="text" id="cfg-footer" value="{{ practice.footer_text }}" placeholder="e.g. Witley &amp; Milford Surgery · ICO reference Z1234567">
+    </div>
+  </div>
+  <div style="margin-top:16px;display:flex;align-items:center;gap:10px;">
+    <button class="btn btn-primary" onclick="savePracticeConfig()">Save practice details</button>
+    <span id="cfg-saved" style="font-size:12px;color:var(--green);display:none;">Saved — reload to see changes in the navbar</span>
+    <span id="cfg-error" style="font-size:12px;color:var(--red);display:none;"></span>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Staff + Custom words ──────────────────────────────────────────────── -->
+<div class="settings-grid">
+  <div class="settings-panel">
+    <div class="settings-panel-title">Staff / Clinicians</div>
+    <div style="font-size:12px;color:var(--t4);margin-bottom:14px;">Staff names are excluded from redaction. Add all GPs, nurses, and admin staff.</div>
+    <div class="settings-input-row">
+      <input type="text" id="staff-name" placeholder="Full name" style="flex:2;">
+      <input type="text" id="staff-role" placeholder="Role (optional)" style="flex:1;">
+      <button class="btn btn-primary" style="height:34px;padding:0 12px;font-size:11px;" onclick="addStaff()">Add</button>
+    </div>
+    <div class="settings-list" id="staff-list">
+      <div style="color:var(--t5);font-size:12px;padding:8px 0;">Loading…</div>
+    </div>
+  </div>
+
+  <div class="settings-panel">
+    <div class="settings-panel-title">Custom Redaction Words</div>
+    <div style="font-size:12px;color:var(--t4);margin-bottom:14px;">Additional phrases that should always be redacted (e.g. practice name, postcode variants).</div>
+    <div class="settings-input-row">
+      <input type="text" id="word-phrase" placeholder="Phrase to redact">
+      <button class="btn btn-primary" style="height:34px;padding:0 12px;font-size:11px;" onclick="addWord()">Add</button>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label class="check-row">
+        <input type="checkbox" id="word-case">
+        Case-sensitive match
+      </label>
+    </div>
+    <div class="settings-list" id="word-list">
+      <div style="color:var(--t5);font-size:12px;padding:8px 0;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:20px;">
+  <div class="card">
+    <div class="card-header"><span class="mono-label">GP Allocation Workflow</span></div>
+    <div class="card-body" style="font-size:13px;color:var(--t3);line-height:1.7;max-width:640px;">
+      <p>Admins can allocate SARs to specific GPs from the review screen. The allocated GP reviews candidates and submits for sign-off. The admin then finalises the redacted output.</p>
+      <p style="margin-top:8px;color:var(--t4);font-size:12px;">Workflow: <span class="pill pill-new">New</span> → <span class="pill pill-reviewing">In Review</span> → <span class="pill pill-signoff">Sign-off</span> → <span class="pill pill-complete">Complete</span></p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+{% if current_user and current_user.role == 'admin' %}
+function savePracticeConfig() {
+  const data = {
+    practice_name:    document.getElementById('cfg-practice-name').value,
+    practice_address: document.getElementById('cfg-practice-address').value,
+    sar_officer_name: document.getElementById('cfg-officer-name').value,
+    sar_officer_role: document.getElementById('cfg-officer-role').value,
+    sar_officer_email:document.getElementById('cfg-officer-email').value,
+    sar_officer_gmc:  document.getElementById('cfg-officer-gmc').value,
+    footer_text:      document.getElementById('cfg-footer').value,
+  };
+  if (!data.practice_name) {
+    document.getElementById('cfg-error').textContent = 'Practice name is required.';
+    document.getElementById('cfg-error').style.display = 'inline';
+    return;
+  }
+  fetch('/api/practice-config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      document.getElementById('cfg-saved').style.display = 'inline';
+      document.getElementById('cfg-error').style.display = 'none';
+      setTimeout(() => document.getElementById('cfg-saved').style.display = 'none', 4000);
+    } else {
+      document.getElementById('cfg-error').textContent = d.error || 'Save failed.';
+      document.getElementById('cfg-error').style.display = 'inline';
+    }
+  });
+}
+{% endif %}
+
+function loadStaff() {
+  fetch('/api/staff').then(r => r.json()).then(list => {
+    const el = document.getElementById('staff-list');
+    if (!list.length) { el.innerHTML = '<div style="color:var(--t5);font-size:12px;padding:8px 0;">No staff added yet.</div>'; return; }
+    el.innerHTML = list.map(s => `
+      <div class="settings-item">
+        <div>
+          <div class="settings-item-label">${s.name}</div>
+          ${s.role ? `<div class="settings-item-meta">${s.role}</div>` : ''}
+        </div>
+        <button class="btn-sm" style="color:var(--red);" onclick="removeStaff('${s.name.replace(/'/g,"\\'")}')">Remove</button>
+      </div>`).join('');
+  });
+}
+
+function addStaff() {
+  const name = document.getElementById('staff-name').value.trim();
+  const role = document.getElementById('staff-role').value.trim();
+  if (!name) return;
+  fetch('/api/staff', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,role}) })
+    .then(() => { document.getElementById('staff-name').value=''; document.getElementById('staff-role').value=''; loadStaff(); });
+}
+function removeStaff(name) {
+  fetch('/api/staff/' + encodeURIComponent(name), { method:'DELETE' }).then(loadStaff);
+}
+
+function loadWords() {
+  fetch('/api/custom-words').then(r => r.json()).then(list => {
+    const el = document.getElementById('word-list');
+    if (!list.length) { el.innerHTML = '<div style="color:var(--t5);font-size:12px;padding:8px 0;">No custom words added yet.</div>'; return; }
+    el.innerHTML = list.map(w => `
+      <div class="settings-item">
+        <div>
+          <div class="settings-item-label" style="font-family:var(--mono);font-size:12px;">${w.phrase}</div>
+          ${w.case_sensitive ? '<div class="settings-item-meta">Case-sensitive</div>' : ''}
+        </div>
+        <button class="btn-sm" style="color:var(--red);" onclick="removeWord('${w.phrase.replace(/'/g,"\\'")}')">Remove</button>
+      </div>`).join('');
+  });
+}
+function addWord() {
+  const phrase = document.getElementById('word-phrase').value.trim();
+  const case_sensitive = document.getElementById('word-case').checked;
+  if (!phrase) return;
+  fetch('/api/custom-words', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phrase,case_sensitive}) })
+    .then(() => { document.getElementById('word-phrase').value=''; loadWords(); });
+}
+function removeWord(phrase) {
+  fetch('/api/custom-words/' + encodeURIComponent(phrase), { method:'DELETE' }).then(loadWords);
+}
+
+document.getElementById('staff-name')?.addEventListener('keydown', e => { if (e.key==='Enter') addStaff(); });
+document.getElementById('word-phrase')?.addEventListener('keydown', e => { if (e.key==='Enter') addWord(); });
+
+loadStaff();
+loadWords();
+
+// Scroll to #practice anchor if in URL
+if (window.location.hash === '#practice') {
+  document.getElementById('practice')?.scrollIntoView({behavior:'smooth'});
+}
+</script>
+{% endblock %}

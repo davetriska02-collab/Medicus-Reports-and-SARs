@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup — SAR Redact</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-box">
+      <div class="auth-brand">SAR Redact</div>
+      <div class="auth-title">Create admin account</div>
+      <p style="font-size:12px;color:var(--t4);margin-bottom:20px;">First-time setup. This account will have full admin access.</p>
+      {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+      <form method="POST" action="/setup">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>Username</label>
+          <input type="text" name="username" autofocus>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>Display name</label>
+          <input type="text" name="display_name" placeholder="e.g. Dr Triska">
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>Password</label>
+          <input type="password" name="password">
+        </div>
+        <div class="form-group" style="margin-bottom:20px;">
+          <label>Confirm password</label>
+          <input type="password" name="confirm_password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Create account</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

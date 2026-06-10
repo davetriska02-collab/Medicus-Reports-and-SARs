@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Review — {{ sar.subject.full_name or 'SAR' }} — SAR Redact{% endblock %}
+{% block main_class %}{% endblock %}
+
+{% block extra_head %}
+<style>
+body { overflow: hidden; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="review-toolbar">
+  <div class="toolbar-left">
+    <div>
+      <div style="font-size:13px;font-weight:500;color:var(--t2);">{{ sar.subject.full_name or ((sar.subject.first_name ~ ' ' ~ sar.subject.last_name)|trim) }}</div>
+      <div class="sar-ref">{{ sar.id[:8] }} &nbsp;·&nbsp; Due {{ sar.due_date|fdate }}
+        {% if sar.days_remaining < 0 %}&nbsp;<span style="color:var(--red);">{{ sar.days_remaining }}d overdue</span>
+        {% elif sar.days_remaining <= 3 %}&nbsp;<span style="color:var(--red);">{{ sar.days_remaining }}d left</span>
+        {% elif sar.days_remaining <= 7 %}&nbsp;<span style="color:var(--amber);">{{ sar.days_remaining }}d left</span>
+        {% else %}&nbsp;<span style="color:var(--t4);">{{ sar.days_remaining }}d left</span>{% endif %}
+      </div>
+    </div>
+    <div class="toolbar-divider"></div>
+    {% if sar.workflow_status == 'ready_for_signoff' %}<span class="pill pill-signoff">Sign-off</span>
+    {% elif sar.workflow_status == 'complete' %}<span class="pill pill-complete">Done</span>
+    {% elif sar.workflow_status == 'in_review' %}<span class="pill pill-reviewing">In Review</span>
+    {% else %}<span class="pill pill-new">New</span>{% endif %}
+    {% if sar.clock_paused %}<span class="pill pill-paused">Clock Paused</span>{% endif %}
+  </div>
+
+  <div class="toolbar-centre">
+    <select class="toolbar-select" id="file-select">
+      {% for fi in files_info %}
+      <option value="{{ fi.name }}" {% if fi.name == main_record_file %}selected{% endif %}>
+        {{ fi.name }} ({{ fi.pages }}pp{% if fi.date %} · {{ fi.date }}{% endif %})
+      </option>
+      {% endfor %}
+    </select>
+    <button class="btn-sm" id="sort-date-btn" title="Sort by date" onclick="setFileOrder('date')">Date</button>
+    <button class="btn-sm" id="sort-file-btn" title="Sort by file" onclick="setFileOrder('file')">File</button>
+    <div class="toolbar-divider"></div>
+    <button class="btn-sm" id="prev-page-btn" title="Previous page (←)">‹</button>
+    <span id="page-indicator" style="font-family:var(--mono);font-size:10px;color:var(--t4);white-space:nowrap;min-width:50px;text-align:center;">1 / —</span>
+    <button class="btn-sm" id="next-page-btn" title="Next page (→)">›</button>
+  </div>
+
+  <div class="toolbar-right">
+    <div class="zoom-controls">
+      <button id="zoom-out-btn" title="Zoom out (-)">−</button>
+      <span id="zoom-level">100%</span>
+      <button id="zoom-in-btn" title="Zoom in (+)">+</button>
+    </div>
+    <div class="toolbar-divider"></div>
+    <button class="btn-sm btn-draw-mode" id="draw-mode-btn" title="Draw manual redaction (D)">✎</button>
+    <button class="btn-sm" id="legend-btn" title="Toggle legend (L)">◉</button>
+    <button class="btn-sm" id="page-nav-btn" title="Page navigator (N)">⊞</button>
+    <div class="toolbar-divider"></div>
+    {% if current_user and current_user.role == 'admin' %}
+    <button class="btn-sm" id="settings-btn" title="Detection settings">⚙</button>
+    <button class="btn btn-primary" id="finalise-btn" style="height:28px;padding:0 12px;font-size:11px;">Finalise</button>
+    {% endif %}
+    <a href="/api/sar/{{ sar.id }}/export" class="btn btn-ghost" style="height:28px;padding:0 10px;font-size:11px;display:flex;align-items:center;" title="Export .sarpack for transfer to another machine">↓ Export</a>
+    <a href="/" class="btn btn-ghost" style="height:28px;padding:0 10px;font-size:11px;display:flex;align-items:center;">✕</a>
+  </div>
+</div>
+
+<div class="review-layout">
+  <!-- PDF panel -->
+  <div class="review-pdf-panel">
+    <div class="pdf-scroll" id="pdf-scroll">
+      <div id="pdf-canvas-container">
+        <canvas id="pdf-canvas"></canvas>
+        <svg id="redact-overlay" class="redact-overlay" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="colour-legend hidden" id="legend-panel">
+      <div class="legend-title">Redaction Categories</div>
+      <div class="legend-grid">
+        <div class="legend-item"><div class="legend-swatch swatch-person_name"></div>Person name</div>
+        <div class="legend-item"><div class="legend-swatch swatch-nhs_number"></div>NHS number</div>
+        <div class="legend-item"><div class="legend-swatch swatch-address"></div>Address</div>
+        <div class="legend-item"><div class="legend-swatch swatch-phone_number"></div>Phone</div>
+        <div class="legend-item"><div class="legend-swatch swatch-postcode"></div>Postcode</div>
+        <div class="legend-item"><div class="legend-swatch swatch-email"></div>Email</div>
+        <div class="legend-item"><div class="legend-swatch swatch-date_of_birth"></div>Date of birth</div>
+        <div class="legend-item"><div class="legend-swatch swatch-safeguarding"></div>Safeguarding</div>
+        <div class="legend-item"><div class="legend-swatch swatch-manual"></div>Manual</div>
+        <div class="legend-item"><div class="legend-swatch swatch-risk"></div>Risk flag</div>
+      </div>
+    </div>
+
+    <!-- Page navigator -->
+    <div class="page-navigator hidden" id="page-nav-panel">
+      <div class="legend-title" style="margin-bottom:8px;">Pages</div>
+      <div class="page-nav-grid" id="page-nav-grid"></div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="review-sidebar">
+    <div class="sidebar-header">
+      <div>
+        <span class="mono-label">Candidates</span>
+        <span id="reviewed-count" style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-left:8px;"></span>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;">
+        <button class="btn-sm active" id="filter-all" onclick="setFilter('all')">All</button>
+        <button class="btn-sm" id="filter-flagged" onclick="setFilter('flagged')" title="Flagged">⚑</button>
+        <button class="btn-sm" id="filter-auto" onclick="setFilter('auto_redact')" title="Auto">✓</button>
+        <button class="btn-sm" id="filter-pending" onclick="setFilter('pending')" title="Pending">○</button>
+      </div>
+    </div>
+    <div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
+      <input id="search-input" placeholder="Search text…" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t1);padding:4px 8px;font-size:11px;outline:none;min-width:60px;">
+      <button class="btn-sm" id="sort-page-btn" onclick="setSort('page')">Page</button>
+      <button class="btn-sm" id="sort-conf-btn" onclick="setSort('confidence')">Conf.</button>
+    </div>
+    <div class="sidebar-progress">
+      <div class="sidebar-progress-fill" id="sidebar-progress-fill" style="width:0%"></div>
+    </div>
+    <div class="candidates-list" id="candidates-list">
+      <div style="text-align:center;padding:32px 16px;color:var(--t5);font-size:12px;">Loading candidates…</div>
+    </div>
+    <!-- Notes footer -->
+    <div style="padding:8px 10px;border-top:1px solid var(--border);flex-shrink:0;">
+      <div class="mono-label" style="margin-bottom:4px;">Case notes</div>
+      <textarea id="notes-ta" rows="3" placeholder="Add notes…"
+        style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t1);padding:6px 8px;font-size:11px;outline:none;resize:none;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">{{ sar.notes or '' }}</textarea>
+    </div>
+    <!-- Workflow actions -->
+    <div style="padding:8px 10px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0;">
+      {% if current_user and current_user.role == 'admin' %}
+      <select id="allocate-select" class="toolbar-select" style="flex:1;">
+        <option value="">Unallocated</option>
+        {% for gp in gp_users %}
+        <option value="{{ gp.id }}" {% if gp.id == sar.allocated_to %}selected{% endif %}>{{ gp.display_name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn-sm" onclick="allocateSar()">Assign</button>
+      {% endif %}
+      {% if current_user and (current_user.role == 'admin' or sar.allocated_to == current_user.id) %}
+      <button class="btn-sm" id="workflow-btn" onclick="submitWorkflow()">
+        {% if current_user.role == 'admin' %}Sign off{% else %}Submit for sign-off{% endif %}
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Detection settings modal -->
+<div class="modal-overlay hidden" id="settings-modal">
+  <div class="modal">
+    <div class="modal-title">Detection Settings</div>
+    <div class="modal-subtitle">Changes apply to new re-detections only.</div>
+    <div style="margin-bottom:14px;">
+      <label class="mono-label" style="display:block;margin-bottom:6px;">Auto-redact threshold</label>
+      <input type="range" id="ds-auto" min="0.3" max="1.0" step="0.05" value="0.80" style="width:100%;accent-color:var(--accent);" oninput="document.getElementById('ds-auto-v').textContent=parseFloat(this.value).toFixed(2)">
+      <span class="mono-label" id="ds-auto-v">0.80</span>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label class="mono-label" style="display:block;margin-bottom:6px;">Flag threshold</label>
+      <input type="range" id="ds-flag" min="0.2" max="0.9" step="0.05" value="0.50" style="width:100%;accent-color:var(--accent);" oninput="document.getElementById('ds-flag-v').textContent=parseFloat(this.value).toFixed(2)">
+      <span class="mono-label" id="ds-flag-v">0.50</span>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('settings-modal').classList.add('hidden')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- data for JS -->
+<script>
+window.SAR_ID = "{{ sar.id }}";
+window.FILES_DATE = {{ files_info_date | tojson }};
+window.FILES_FILE = {{ files_info_file | tojson }};
+window.MAIN_RECORD = "{{ main_record_file }}";
+window.GP_USERS = {{ gp_users | tojson if gp_users else '[]' }};
+window.IS_ADMIN = {{ 'true' if current_user and current_user.role == 'admin' else 'false' }};
+window.CURRENT_USER_ID = "{{ current_user.id if current_user else '' }}";
+</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script type="module" src="{{ url_for('static', filename='js/review/main.js') }}"></script>
+{% endblock %}

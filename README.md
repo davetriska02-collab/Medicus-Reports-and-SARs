@@ -1,0 +1,67 @@
+# SAR Redact v2
+### Witley & Milford Surgery — Subject Access Request Redaction System
+
+Built on the Medicus Suite design language. Processes GP medical records for Subject Access Request disclosure under UK GDPR.
+
+---
+
+## Quick start
+
+**Windows**
+1. Extract this folder somewhere permanent (e.g. `C:\SAR Redact\`)
+2. Double-click `start_server.bat`
+3. First run installs dependencies automatically — takes ~2 minutes
+4. Browse to `http://localhost:5000`
+
+**Mac / Linux**
+1. Extract the folder
+2. Run `./start_server.sh` in terminal
+3. Browse to `http://localhost:5000`
+
+---
+
+## Network access (multi-user)
+
+Run `serve.py` on a dedicated machine. The startup banner shows your LAN address — any machine on the same network can access the app at `http://<IP>:5000`. Recommended for practices with multiple GPs reviewing SARs.
+
+---
+
+## First-run setup
+
+On first launch you will be prompted to create an admin account. From there you can add GP users via **Admin → Users**.
+
+---
+
+## Updates
+
+SAR Redact checks for updates automatically each time the server starts. If a newer version is available, a green banner appears on the dashboard with a one-click download link.
+
+Updates are published to:  
+`https://github.com/davetriska02-collab/SAR-REDACTOR-MEDICUS/releases`
+
+To update manually: download the latest zip, extract alongside your existing install, and copy your `data/` folder across.
+
+---
+
+## Supported file formats
+
+PDF · TIF/TIFF · RTF · TXT · PNG · JPG · ZIP (containing any of the above) · CDAX (GP2GP clinical documents)
+
+---
+
+## Data storage
+
+All data is stored locally in the `data/` subfolder. Nothing is transmitted externally except the optional GitHub update check (version number only, no patient data).
+
+---
+
+## Version history
+
+| Version | Notes |
+|---------|-------|
+| 2.0 | Medicus Suite rebrand · thread-safe store · relative path storage · archive/redetect endpoints · ES module JS split |
+| 1.0 | Initial release |
+
+---
+
+*Graysbrook Ltd · Dr D Triska GMC 6159481 · DCB0129 Clinical Safety Officer*

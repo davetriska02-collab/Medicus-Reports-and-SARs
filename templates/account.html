@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Account — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="margin-bottom:24px;">
+  <h1>Account</h1>
+  <div class="heading-rule"></div>
+</div>
+
+{% if error %}<div class="alert alert-error" style="max-width:440px;">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success" style="max-width:440px;">{{ success }}</div>{% endif %}
+
+<div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;max-width:700px;">
+  <div class="card">
+    <div class="card-body">
+      <div class="mono-label" style="margin-bottom:8px;">Signed in as</div>
+      <div style="font-size:16px;font-weight:500;color:var(--t1);margin-bottom:4px;">{{ current_user.display_name }}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--t4);margin-bottom:10px;">{{ current_user.username }}</div>
+      {% if current_user.role == 'admin' %}<span class="pill pill-admin">Admin</span>
+      {% else %}<span class="pill pill-gp">GP</span>{% endif %}
+      {% if current_user.is_superuser %}<span class="pill pill-complete" style="margin-left:4px;">Superuser</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="form-card">
+    <div class="form-card-title">Change password</div>
+    <div class="form-card-hint">Minimum 8 characters.</div>
+    <form method="POST" action="/account/change-password">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Current password</label>
+        <input type="password" name="current_password" required>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>New password</label>
+        <input type="password" name="new_password" required>
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label>Confirm new password</label>
+        <input type="password" name="confirm_password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Update password</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

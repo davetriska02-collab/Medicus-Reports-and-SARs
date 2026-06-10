@@ -1,0 +1,18 @@
+# Patient data — never commit
+data/*
+!data/.gitkeep
+uploads/*
+!uploads/.gitkeep
+output/*
+!output/.gitkeep
+
+# Runtime
+python-runtime/
+venv/
+__pycache__/
+*.pyc
+py-embed.zip
+get-pip.py
+dl_result.txt
+ex_result.txt
+pip_result.txt

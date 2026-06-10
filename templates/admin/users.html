@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}User Management — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px;">
+  <div>
+    <h1>User Management</h1>
+    <div class="heading-rule"></div>
+  </div>
+  <button class="btn btn-primary" onclick="toggleAddForm()">+ Add user</button>
+</div>
+
+<div class="add-user-form hidden" id="add-form" style="margin-bottom:20px;">
+  <div class="mono-label" style="margin-bottom:12px;">New user</div>
+  {% if errors %}
+  <div class="alert alert-error" style="margin-bottom:12px;">
+    {% for e in errors %}{{ e }}{% if not loop.last %} &nbsp;·&nbsp; {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+  <form method="POST" action="/admin/users/create" style="display:grid;grid-template-columns:1fr 1fr 100px 140px auto;gap:10px;align-items:end;">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" name="username" required>
+    </div>
+    <div class="form-group">
+      <label>Display name</label>
+      <input type="text" name="display_name" placeholder="e.g. Dr Smith" required>
+    </div>
+    <div class="form-group">
+      <label>Role</label>
+      <select name="role">
+        <option value="gp">GP</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" name="password" required>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:1px;">
+      <button type="submit" class="btn btn-primary">Create</button>
+      <button type="button" class="btn btn-ghost" onclick="toggleAddForm()">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<div class="users-table">
+  {% for u in users %}
+  <div class="user-row">
+    <div style="flex:1;">
+      <div class="user-name">{{ u.display_name }}</div>
+      <div class="user-username">@{{ u.username }}</div>
+    </div>
+    {% if u.role == 'admin' %}<span class="pill pill-admin">Admin</span>
+    {% else %}<span class="pill pill-gp">GP</span>{% endif %}
+    {% if u.is_superuser %}<span class="pill pill-complete">Superuser</span>{% endif %}
+    <div style="display:flex;gap:6px;">
+      <button class="btn-sm" onclick="resetPassword('{{ u.id }}', '{{ u.display_name }}')">Reset pw</button>
+      {% if not u.is_superuser %}
+      <button class="btn-sm" style="color:var(--red);" onclick="deleteUser('{{ u.id }}', '{{ u.display_name }}')">Delete</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function toggleAddForm() {
+  const f = document.getElementById('add-form');
+  f.classList.toggle('hidden');
+}
+{% if errors %}document.getElementById('add-form').classList.remove('hidden');{% endif %}
+
+function resetPassword(uid, name) {
+  const pw = prompt('New password for ' + name + ' (min 8 chars):');
+  if (!pw) return;
+  fetch('/admin/users/' + uid + '/reset-password', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({new_password: pw})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) alert('Password updated for ' + name);
+    else alert('Error: ' + (d.error || 'Unknown'));
+  });
+}
+
+function deleteUser(uid, name) {
+  if (!confirm('Delete user ' + name + '?\n\nThis cannot be undone.')) return;
+  fetch('/admin/users/' + uid + '/delete', { method: 'POST' })
+    .then(() => location.reload());
+}
+</script>
+{% endblock %}

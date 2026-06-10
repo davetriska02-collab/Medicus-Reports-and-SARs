@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}New SAR — SAR Redact{% endblock %}
+{% block extra_head %}
+<style>
+.alias-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.alias-row  { display:flex; gap:8px; align-items:center; }
+.alias-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md); color:var(--t1); padding:7px 10px; font-size:13px; outline:none; }
+.alias-row input:focus { border-color:var(--accent); }
+.alias-remove { background:none; border:none; color:var(--t5); font-size:18px; line-height:1; cursor:pointer; padding:0 4px; }
+.alias-remove:hover { color:var(--red); }
+.threshold-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.threshold-row label { font-family:var(--mono); font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--t4); width:140px; flex-shrink:0; }
+.threshold-row input[type=range] { flex:1; accent-color:var(--accent); }
+.threshold-val { font-family:var(--mono); font-size:11px; color:var(--t2); width:32px; text-align:right; }
+#progress-card { display:none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="/" class="page-header-back">← Dashboard</a>
+  <h1>New Subject Access Request</h1>
+  <div class="heading-rule"></div>
+</div>
+
+<div id="progress-card" class="job-progress" style="margin-bottom:20px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+    <span class="mono-label">Analysing documents</span>
+    <span id="job-pct" style="font-family:var(--mono);font-size:10px;color:var(--t4);">0%</span>
+  </div>
+  <div class="job-bar-track"><div class="job-bar-fill" id="job-fill" style="width:0%"></div></div>
+  <div class="job-step" id="job-step">Initialising...</div>
+</div>
+
+<div id="main-form" style="display:grid;grid-template-columns:1fr 400px;gap:20px;align-items:start;">
+  <div>
+    <div class="form-card">
+      <div class="form-card-title">Subject Details</div>
+      <div class="form-card-hint">Enter patient information as it appears in the medical record.</div>
+      <div class="form-grid">
+        <div class="form-group form-group-wide">
+          <label>Full name <span class="required">*</span></label>
+          <input type="text" id="full_name" name="full_name" placeholder="e.g. Jane Elizabeth Smith" required>
+        </div>
+        <div class="form-group">
+          <label>First name</label>
+          <input type="text" id="first_name" name="first_name">
+        </div>
+        <div class="form-group">
+          <label>Last name</label>
+          <input type="text" id="last_name" name="last_name">
+        </div>
+        <div class="form-group">
+          <label>NHS Number</label>
+          <input type="text" id="nhs_number" name="nhs_number" placeholder="e.g. 943 476 5919">
+        </div>
+        <div class="form-group">
+          <label>Date of birth</label>
+          <input type="date" id="date_of_birth" name="date_of_birth">
+        </div>
+        <div class="form-group form-group-wide">
+          <label>Address</label>
+          <textarea id="address" name="address" rows="2" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);color:var(--t1);padding:8px 10px;font-size:13px;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="text" id="phone" name="phone">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="email" name="email">
+        </div>
+        <div class="form-group form-group-wide">
+          <label>Aliases / previous names</label>
+          <div class="alias-list" id="alias-list"></div>
+          <button type="button" class="btn btn-ghost" style="margin-top:8px;width:fit-content;font-size:11px;" onclick="addAlias()">+ Add alias</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <div class="form-card-title">Detection Settings</div>
+      <div class="form-card-hint">Adjust thresholds for automatic vs flagged redactions.</div>
+      <div class="threshold-row">
+        <label>Auto-redact above</label>
+        <input type="range" id="auto_thresh" min="0.3" max="1.0" step="0.05" value="0.80" oninput="document.getElementById('auto_val').textContent=parseFloat(this.value).toFixed(2)">
+        <span class="threshold-val" id="auto_val">0.80</span>
+      </div>
+      <div class="threshold-row">
+        <label>Flag above</label>
+        <input type="range" id="flag_thresh" min="0.2" max="0.9" step="0.05" value="0.50" oninput="document.getElementById('flag_val').textContent=parseFloat(this.value).toFixed(2)">
+        <span class="threshold-val" id="flag_val">0.50</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="form-card" style="margin-bottom:0;">
+      <div class="form-card-title">Documents</div>
+      <div class="form-card-hint">PDF, TIF, RTF, TXT, ZIP — multiple files accepted.</div>
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+        <input type="file" id="file-input" multiple accept=".pdf,.tif,.tiff,.rtf,.txt,.zip,.png,.jpg,.jpeg,.html,.cdax">
+        <div class="upload-zone-icon">⊕</div>
+        <div class="upload-zone-text">Click to add files</div>
+        <div class="upload-zone-hint">or drag and drop here</div>
+      </div>
+      <div class="file-chips" id="file-chips"></div>
+      <div id="file-error" class="alert alert-error" style="display:none;margin-top:12px;"></div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <button type="button" id="submit-btn" class="btn btn-primary" style="width:100%;padding:12px;" onclick="submitSar()">
+        Start SAR Analysis
+      </button>
+      <div id="submit-error" class="alert alert-error" style="display:none;margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

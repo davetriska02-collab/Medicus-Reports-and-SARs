@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Reports — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;">
+  <div>
+    <div class="mono-label" style="margin-bottom:4px;">Medical Reports</div>
+    <h1>Reports</h1>
+    <div class="heading-rule"></div>
+  </div>
+  <a href="/reports/new" class="btn btn-primary">+ New report</a>
+</div>
+
+{% set total_r = reports|length %}
+{% set in_progress = reports|selectattr('status','equalto','in_progress')|list|length %}
+{% set complete_r  = reports|selectattr('status','equalto','complete')|list|length %}
+<div class="stat-grid" style="margin-bottom:24px;">
+  <div class="stat-card"><div class="stat-card-label">Total</div><div class="stat-card-value">{{ total_r }}</div></div>
+  <div class="stat-card"><div class="stat-card-label">In Progress</div><div class="stat-card-value reviewing">{{ in_progress }}</div></div>
+  <div class="stat-card"><div class="stat-card-label">Complete</div><div class="stat-card-value complete">{{ complete_r }}</div></div>
+</div>
+
+{% if reports %}
+<div class="report-table" style="margin-bottom:32px;">
+  {% for r in reports %}
+  <div class="report-row">
+    <div style="flex:1;">
+      <div class="report-name">{{ r.patient.full_name }}</div>
+      <div class="report-meta">{{ r.template_name }} &nbsp;·&nbsp; {{ r.created_at[:10]|replace('-',' ')|truncate(11,True,'') }}
+        {% if r.created_by_name %}&nbsp;·&nbsp; {{ r.created_by_name }}{% endif %}
+      </div>
+    </div>
+    {% if r.status == 'complete' %}<span class="pill pill-complete">Complete</span>
+    {% else %}<span class="pill pill-reviewing">In progress</span>{% endif %}
+    <a href="/reports/{{ r.id }}" class="btn-sm">Open</a>
+    {% if current_user and current_user.role == 'admin' %}
+    <button class="btn-sm" style="color:var(--red);" onclick="deleteReport('{{ r.id }}')">Delete</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div style="text-align:center;padding:48px 20px;color:var(--t4);">
+  <div style="font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">No reports yet</div>
+  <a href="/reports/new" class="btn btn-primary">Create first report</a>
+</div>
+{% endif %}
+
+{% if current_user and current_user.role == 'admin' %}
+<div class="section-head">Report templates</div>
+<div class="settings-list" style="margin-bottom:12px;">
+  {% for t in templates %}
+  <div class="settings-item">
+    <div>
+      <div class="settings-item-label">{{ t.name }}</div>
+      <div class="settings-item-meta">{{ t.category }} &nbsp;·&nbsp; {{ t.questions|length }} questions
+        {% if t.is_builtin %}&nbsp;·&nbsp; <span style="color:var(--accent);">built-in</span>{% endif %}
+      </div>
+    </div>
+    {% if not t.is_builtin %}
+    <button class="btn-sm" style="color:var(--red);" onclick="deleteTemplate('{{ t.id }}')">Delete</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function deleteReport(id) {
+  if (!confirm('Delete this report? This cannot be undone.')) return;
+  fetch('/api/reports/' + id + '/delete', { method: 'POST' }).then(() => location.reload());
+}
+function deleteTemplate(id) {
+  if (!confirm('Delete this template?')) return;
+  fetch('/api/templates/' + id, { method: 'DELETE' }).then(() => location.reload());
+}
+</script>
+{% endblock %}

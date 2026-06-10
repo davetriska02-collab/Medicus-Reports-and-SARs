@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAR Redact — Launcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:     #0b1424;
+      --bg-e:   #131e34;
+      --border: #1e3050;
+      --accent: #4a7fb8;
+      --green:  #4ade80;
+      --amber:  #fbbf24;
+      --red:    #f87171;
+      --t1: #f1f5f9;
+      --t2: #cfe1ff;
+      --t3: #93a8c5;
+      --t4: #5d7a9d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--t1);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--bg-e);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 40px 48px;
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+    }
+
+    .brand {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--t4);
+      margin-bottom: 6px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      color: var(--t1);
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: var(--t4);
+      margin-bottom: 36px;
+    }
+
+    /* Status indicator */
+    .status-ring {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 3px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 24px;
+      transition: border-color 0.4s;
+      position: relative;
+    }
+    .status-ring.checking { border-color: var(--accent); animation: pulse-ring 1.4s ease-in-out infinite; }
+    .status-ring.ready    { border-color: var(--green); }
+    .status-ring.offline  { border-color: var(--amber); }
+
+    @keyframes pulse-ring {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .status-text.checking { color: var(--accent); }
+    .status-text.ready    { color: var(--green); }
+    .status-text.offline  { color: var(--amber); }
+
+    .status-detail {
+      font-size: 12px;
+      color: var(--t4);
+      margin-bottom: 28px;
+      min-height: 18px;
+    }
+
+    .btn-open {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      border: none;
+      border-radius: 7px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, opacity 0.15s;
+      margin-bottom: 12px;
+    }
+    .btn-open:hover { background: #5c94d0; }
+    .btn-open:disabled, .btn-open.disabled {
+      opacity: 0.35;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .btn-secondary {
+      display: inline-block;
+      font-size: 12px;
+      color: var(--t4);
+      cursor: pointer;
+      border: none;
+      background: none;
+      text-decoration: underline;
+      margin-bottom: 32px;
+    }
+    .btn-secondary:hover { color: var(--t2); }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0 0 24px;
+    }
+
+    .instructions {
+      text-align: left;
+    }
+    .instructions-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--t4);
+      margin-bottom: 12px;
+    }
+    .step {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 10px;
+      align-items: flex-start;
+    }
+    .step-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(74,127,184,0.15);
+      border: 1px solid rgba(74,127,184,0.3);
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-text { font-size: 12px; color: var(--t3); line-height: 1.5; }
+    .step-text code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--t2);
+      background: rgba(255,255,255,0.06);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .footer {
+      margin-top: 28px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      color: var(--t4);
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">Witley &amp; Milford Surgery</div>
+  <h1>SAR Redact</h1>
+  <div class="subtitle">Subject Access Request System</div>
+
+  <div class="status-ring checking" id="ring">⟳</div>
+  <div class="status-text checking" id="status-text">Checking server</div>
+  <div class="status-detail" id="status-detail">Looking for SAR Redact on this machine…</div>
+
+  <a href="http://localhost:5000" id="open-btn" class="btn-open disabled" target="_blank">
+    Open SAR Redact →
+  </a>
+  <button class="btn-secondary" onclick="retryCheck()">Retry connection</button>
+
+  <hr class="divider">
+
+  <div class="instructions">
+    <div class="instructions-title">If the server is not running</div>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">Find <code>start_server.bat</code> in the SAR Redact folder and double-click it</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">Wait for the black terminal window to show <code>http://localhost:5000</code> — first run takes 2–4 minutes to install</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">Click <strong style="color:var(--t2);">Retry connection</strong> above, then <strong style="color:var(--t2);">Open SAR Redact</strong></div>
+    </div>
+    <div class="step" style="margin-bottom:0;">
+      <div class="step-num">4</div>
+      <div class="step-text">Keep the black terminal window open while working — closing it stops the server</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">SAR Redact v2 &nbsp;·&nbsp; Graysbrook Ltd &nbsp;·&nbsp; Dr D Triska GMC 6159481</div>
+
+<script>
+  const SERVER = 'http://localhost:5000';
+  let pollTimer = null;
+
+  function setStatus(state, text, detail) {
+    const ring = document.getElementById('ring');
+    const st   = document.getElementById('status-text');
+    const sd   = document.getElementById('status-detail');
+    const btn  = document.getElementById('open-btn');
+
+    ring.className = 'status-ring ' + state;
+    st.className   = 'status-text ' + state;
+    st.textContent = text;
+    sd.textContent = detail;
+
+    if (state === 'ready') {
+      ring.textContent = '✓';
+      btn.classList.remove('disabled');
+    } else if (state === 'offline') {
+      ring.textContent = '○';
+      btn.classList.add('disabled');
+    } else {
+      ring.textContent = '⟳';
+      btn.classList.add('disabled');
+    }
+  }
+
+  async function checkServer() {
+    try {
+      // Fetch with a short timeout — if the server is up it'll respond quickly
+      const ctrl = new AbortController();
+      const tid  = setTimeout(() => ctrl.abort(), 3000);
+      const res  = await fetch(SERVER + '/login', {
+        method: 'HEAD',
+        signal: ctrl.signal,
+        mode: 'no-cors',      // avoids CORS errors; we only care about reachability
+      });
+      clearTimeout(tid);
+      // If we get here (even with opaque response) the server is up
+      onReady();
+    } catch (e) {
+      onOffline();
+    }
+  }
+
+  function onReady() {
+    clearInterval(pollTimer);
+    setStatus('ready', 'Server ready', 'SAR Redact is running on this machine.');
+    // Auto-open after a brief moment on first detection
+    if (!sessionStorage.getItem('opened')) {
+      sessionStorage.setItem('opened', '1');
+      setTimeout(() => window.open(SERVER, '_blank'), 600);
+    }
+  }
+
+  function onOffline() {
+    setStatus('offline', 'Server offline', 'SAR Redact is not running. Follow the steps below.');
+  }
+
+  function retryCheck() {
+    setStatus('checking', 'Checking server', 'Looking for SAR Redact on this machine…');
+    checkServer();
+  }
+
+  // Poll every 3 seconds until the server comes up
+  function startPolling() {
+    checkServer();
+    pollTimer = setInterval(checkServer, 3000);
+  }
+
+  startPolling();
+</script>
+</body>
+</html>

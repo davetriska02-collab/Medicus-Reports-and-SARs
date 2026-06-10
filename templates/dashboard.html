@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SAR Redact{% endblock %}
+{% block content %}
+{% if update and update.update_available %}
+<div id="update-banner" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);border-radius:var(--r-lg);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+  <span style="font-size:18px;">↑</span>
+  <div style="flex:1;">
+    <span style="font-weight:500;color:var(--green);">Update available — v{{ update.latest_version }}</span>
+    {% if update.release_name %}<span style="color:var(--t3);font-size:12px;margin-left:8px;">{{ update.release_name }}</span>{% endif %}
+    {% if update.release_notes %}<div style="font-size:12px;color:var(--t4);margin-top:3px;">{{ update.release_notes[:120] }}{% if update.release_notes|length > 120 %}…{% endif %}</div>{% endif %}
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+    <a href="{{ update.download_url }}" target="_blank" class="btn btn-primary" style="font-size:11px;height:30px;padding:0 12px;">↓ Download</a>
+    <a href="{{ update.release_url }}" target="_blank" class="btn btn-ghost" style="font-size:11px;height:30px;padding:0 10px;">Release notes</a>
+    <button onclick="dismissUpdate()" style="background:none;border:none;color:var(--t5);font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">×</button>
+  </div>
+</div>
+{% endif %}
+<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;">
+  <div>
+    <div class="mono-label" style="margin-bottom:4px;">{{ practice.practice_name }}</div>
+    <h1>Subject Access Requests</h1>
+    <div class="heading-rule"></div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    {% if archived_count > 0 and not show_archived %}
+    <a href="/?archived=1" class="btn btn-ghost" style="font-size:11px;">{{ archived_count }} archived</a>
+    {% endif %}
+    {% if show_archived %}
+    <a href="/" class="btn btn-ghost">← Active</a>
+    {% endif %}
+    <button class="btn btn-ghost" onclick="toggleTransfer()">⇄ Transfer SAR</button>
+    <a href="/new" class="btn btn-primary">+ New SAR</a>
+  </div>
+</div>
+
+{% if show_archived %}
+<div class="alert alert-info" style="margin-bottom:20px;">
+  Showing archived SARs. <a href="/">Return to active dashboard →</a>
+</div>
+{% endif %}
+
+{% if not show_archived %}
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-card-label">Total Active</div>
+    <div class="stat-card-value">{{ total_requests }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">In Review</div>
+    <div class="stat-card-value reviewing">{{ reviewing_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">Complete</div>
+    <div class="stat-card-value complete">{{ complete_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">Overdue</div>
+    <div class="stat-card-value overdue">{{ overdue_count }}</div>
+  </div>
+</div>
+{% endif %}
+
+
+<!-- ── SAR Transfer ──────────────────────────────────────────────────────── -->
+{% if current_user and current_user.role == 'admin' %}
+<div id="transfer-section" class="card" style="margin-bottom:24px;display:none;">
+  <div class="card-header" style="justify-content:space-between;">
+    <span class="mono-label">SAR Transfer</span>
+    <button onclick="document.getElementById('transfer-section').style.display='none'" 
+      style="background:none;border:none;color:var(--t4);font-size:16px;cursor:pointer;line-height:1;">×</button>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+      <!-- Import -->
+      <div>
+        <div class="mono-label" style="margin-bottom:8px;">Import .sarpack</div>
+        <p style="font-size:12px;color:var(--t3);margin-bottom:12px;line-height:1.6;">
+          Receive a SAR from another machine (e.g. started by admin, 
+          continuing review here). Drag a <code style="font-family:var(--mono);font-size:11px;color:var(--t2);">.sarpack</code> file below.
+        </p>
+        <div class="upload-zone" id="import-zone" style="padding:20px;" 
+          onclick="document.getElementById('import-input').click()">
+          <input type="file" id="import-input" accept=".sarpack,.zip" style="display:none">
+          <div style="font-size:13px;color:var(--t3);">Drop .sarpack here or click to browse</div>
+          <div style="font-size:11px;color:var(--t5);margin-top:4px;">USB stick · network share · email attachment</div>
+        </div>
+        <div id="import-status" style="margin-top:10px;font-size:12px;display:none;"></div>
+      </div>
+
+      <!-- How it works -->
+      <div>
+        <div class="mono-label" style="margin-bottom:8px;">How transfer works</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</span>
+            <span style="font-size:12px;color:var(--t3);">Admin uploads documents and detection runs on their machine</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</span>
+            <span style="font-size:12px;color:var(--t3);">Click <strong style="color:var(--t2);">↓ Export</strong> in the review toolbar to download a <code style="font-family:var(--mono);font-size:11px;color:var(--t2);">.sarpack</code> file</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</span>
+            <span style="font-size:12px;color:var(--t3);">Copy to USB stick (or email) and open this panel on the receiving machine</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">4</span>
+            <span style="font-size:12px;color:var(--t3);">Import here, complete review, export again to return to admin for sign-off</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Conflict resolution modal -->
+<div class="modal-overlay hidden" id="conflict-modal">
+  <div class="modal">
+    <div class="modal-title">SAR already exists on this machine</div>
+    <div class="modal-subtitle" id="conflict-detail"></div>
+    <div style="margin-top:16px;font-size:12px;color:var(--t3);">
+      The incoming .sarpack is more recent. You can overwrite the local copy 
+      with the imported version, or cancel to keep the local copy.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('conflict-modal').classList.add('hidden')">Keep local</button>
+      <button class="btn btn-danger" id="force-import-btn">Overwrite with import</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% if sar_summaries %}
+<div class="sar-table">
+  <div class="sar-table-head">
+    <div>Ref</div>
+    <div>Subject</div>
+    <div>Status</div>
+    <div>Allocated</div>
+    <div>Days</div>
+    <div>Workflow</div>
+    <div style="text-align:right;">Actions</div>
+  </div>
+  {% for s in sar_summaries %}
+  {% set sar = s.sar %}
+  <div class="sar-table-row">
+    <div class="sar-table-ref">{{ sar.id[:8] }}</div>
+    <div>
+      <div class="sar-table-name"><a href="/review/{{ sar.id }}">{{ sar.subject.full_name or (sar.subject.first_name ~ ' ' ~ sar.subject.last_name)|trim }}</a></div>
+      {% if sar.subject.nhs_number %}<div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:2px;">NHS {{ sar.subject.nhs_number }}</div>{% endif %}
+    </div>
+    <div>
+      {% if sar.status == 'reviewing' %}<span class="pill pill-reviewing">Reviewing</span>
+      {% elif sar.status == 'complete' %}<span class="pill pill-complete">Complete</span>
+      {% else %}<span class="pill pill-new">New</span>{% endif %}
+    </div>
+    <div class="sar-table-alloc {% if not sar.allocated_to_name %}unalloc{% endif %}">
+      {{ sar.allocated_to_name or '—' }}
+    </div>
+    <div>
+      {% if sar.clock_paused %}
+        <span class="days-val days-paused">Paused</span>
+      {% elif s.days_remaining < 0 %}
+        <span class="days-val days-danger">{{ s.days_remaining }}d</span>
+      {% elif s.days_remaining <= 3 %}
+        <span class="days-val days-danger">{{ s.days_remaining }}d</span>
+      {% elif s.days_remaining <= 7 %}
+        <span class="days-val days-amber">{{ s.days_remaining }}d</span>
+      {% else %}
+        <span class="days-val days-safe">{{ s.days_remaining }}d</span>
+      {% endif %}
+    </div>
+    <div>
+      {% if sar.workflow_status == 'ready_for_signoff' %}<span class="pill pill-signoff">Sign-off</span>
+      {% elif sar.workflow_status == 'complete' %}<span class="pill pill-complete">Done</span>
+      {% elif sar.workflow_status == 'in_review' %}<span class="pill pill-reviewing">In Review</span>
+      {% else %}<span class="pill pill-new">New</span>{% endif %}
+    </div>
+    <div class="sar-actions">
+      <a href="/review/{{ sar.id }}" class="btn-sm">Review</a>
+      {% if current_user and current_user.role == 'admin' %}
+      <button class="btn-sm" style="color:var(--red);" onclick="deleteSar('{{ sar.id }}', '{{ sar.subject.full_name or '' }}')">Delete</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div style="text-align:center;padding:60px 20px;color:var(--t4);">
+  <div style="font-size:32px;margin-bottom:12px;">○</div>
+  <div style="font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">No SARs found</div>
+  <div style="font-size:13px;color:var(--t5);margin-bottom:20px;">Upload your first Subject Access Request to get started.</div>
+  <button class="btn btn-ghost" onclick="toggleTransfer()">⇄ Transfer SAR</button>
+    <a href="/new" class="btn btn-primary">+ New SAR</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+
+function dismissUpdate() {
+  const el = document.getElementById('update-banner');
+  if (el) el.style.display = 'none';
+  sessionStorage.setItem('update-dismissed', '1');
+}
+// Auto-hide if dismissed this session
+if (sessionStorage.getItem('update-dismissed')) {
+  const el = document.getElementById('update-banner');
+  if (el) el.style.display = 'none';
+}
+
+
+function toggleTransfer() {
+  const el = document.getElementById('transfer-section');
+  if (!el) return;
+  const visible = el.style.display !== 'none';
+  el.style.display = visible ? 'none' : 'block';
+  if (!visible) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Import via drag/drop or file picker ────────────────────────────────────
+let _pendingSarpack = null;
+
+function setupImport() {
+  const zone  = document.getElementById('import-zone');
+  const input = document.getElementById('import-input');
+  if (!zone || !input) return;
+
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) doImport(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files[0]) doImport(input.files[0]); });
+}
+
+function setImportStatus(msg, colour) {
+  const el = document.getElementById('import-status');
+  el.style.display = 'block';
+  el.style.color = colour || 'var(--t3)';
+  el.textContent = msg;
+}
+
+function doImport(file) {
+  if (!file.name.match(/\.(sarpack|zip)$/i)) {
+    setImportStatus('File must be a .sarpack file.', 'var(--red)'); return;
+  }
+  setImportStatus('Reading ' + file.name + '…', 'var(--t3)');
+
+  const fd = new FormData();
+  fd.append('sarpack', file);
+
+  fetch('/api/sar/import', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        setImportStatus('✓ Imported successfully. Opening review…', 'var(--green)');
+        setTimeout(() => window.location.href = '/review/' + data.sar_id, 800);
+        return;
+      }
+      if (data.conflict) {
+        _pendingSarpack = file;
+        const local  = data.existing_modified ? data.existing_modified.slice(0,10) : 'unknown date';
+        const incoming = data.import_modified ? data.import_modified.slice(0,10) : 'unknown date';
+        document.getElementById('conflict-detail').textContent =
+          data.subject_name + ' — local copy: ' + local + ', incoming: ' + incoming;
+        document.getElementById('conflict-modal').classList.remove('hidden');
+        setImportStatus('Conflict — see modal above.', 'var(--amber)');
+        return;
+      }
+      setImportStatus('Error: ' + (data.error || 'Unknown error'), 'var(--red)');
+    })
+    .catch(e => setImportStatus('Error: ' + e.message, 'var(--red)'));
+}
+
+function forceImport() {
+  if (!_pendingSarpack) return;
+  document.getElementById('conflict-modal').classList.add('hidden');
+  setImportStatus('Overwriting local copy…', 'var(--amber)');
+
+  const fd = new FormData();
+  fd.append('sarpack', _pendingSarpack);
+  fetch('/api/sar/import/force', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        setImportStatus('✓ Imported. Opening review…', 'var(--green)');
+        setTimeout(() => window.location.href = '/review/' + data.sar_id, 800);
+      } else {
+        setImportStatus('Force import failed: ' + (data.error || ''), 'var(--red)');
+      }
+    });
+}
+
+document.getElementById('force-import-btn')?.addEventListener('click', forceImport);
+setupImport();
+
+function deleteSar(id, name) {
+  if (!confirm('Permanently delete SAR for ' + (name || id) + '?\n\nThis cannot be undone.')) return;
+  fetch('/api/sar/' + id + '/delete', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => { if (d.ok) location.reload(); else alert('Error: ' + (d.error || 'Unknown')); });
+}
+</script>
+{% endblock %}

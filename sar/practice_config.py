@@ -1,0 +1,48 @@
+"""
+Practice configuration — name, address, SAR officer details.
+Stored in data/practice.json. Editable from the Settings page by admins.
+"""
+import json
+import os
+
+_CONFIG_PATH = str(__import__('pathlib').Path(__file__).resolve().parent.parent / 'data' / 'practice.json')
+
+DEFAULTS = {
+    "practice_name":    "My Surgery",
+    "practice_address": "",
+    "sar_officer_name": "",
+    "sar_officer_role": "Data Protection Lead",
+    "sar_officer_email": "",
+    "sar_officer_gmc":  "",
+    "footer_text":      "",
+}
+
+
+def get_config() -> dict:
+    """Return current config, falling back to defaults for missing keys."""
+    try:
+        path = os.path.abspath(_CONFIG_PATH)
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                saved = json.load(f)
+            return {**DEFAULTS, **saved}
+    except Exception:
+        pass
+    return dict(DEFAULTS)
+
+
+def save_config(data: dict) -> None:
+    """Persist a subset of allowed keys."""
+    current = get_config()
+    for key in DEFAULTS:
+        if key in data:
+            current[key] = str(data[key]).strip()
+    path = os.path.abspath(_CONFIG_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(current, f, indent=2)
+
+
+def is_default() -> bool:
+    """True if the practice name has never been set."""
+    return get_config()['practice_name'] == DEFAULTS['practice_name']

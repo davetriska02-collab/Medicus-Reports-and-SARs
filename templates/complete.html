@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Complete — {{ sar.subject.full_name or 'SAR' }} — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="/" class="page-header-back">← Dashboard</a>
+</div>
+
+<div class="complete-hero">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+    <div>
+      <div class="mono-label" style="margin-bottom:4px;">Redaction Complete</div>
+      <div class="complete-hero-title">{{ sar.subject.full_name or ((sar.subject.first_name ~ ' ' ~ sar.subject.last_name)|trim) }}</div>
+      <div class="complete-hero-sub">
+        Ref {{ sar.id[:8] }}
+        {% if sar.subject.nhs_number %} &nbsp;·&nbsp; NHS {{ sar.subject.nhs_number }}{% endif %}
+        &nbsp;·&nbsp; Due {{ sar.due_date|fdate }}
+      </div>
+    </div>
+    <span class="pill pill-complete" style="font-size:11px;padding:4px 10px;">Complete</span>
+  </div>
+  <div class="complete-stats">
+    <div>
+      <div class="complete-stat-value">{{ redacted_count }}</div>
+      <div class="complete-stat-label">Redacted</div>
+    </div>
+    <div>
+      <div class="complete-stat-value" style="color:var(--t3);">{{ kept_count }}</div>
+      <div class="complete-stat-label">Kept</div>
+    </div>
+    <div>
+      <div class="complete-stat-value" style="color:var(--amber);">{{ excluded_count }}</div>
+      <div class="complete-stat-label">Excluded</div>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;">
+  <div>
+    <div class="section-head" style="margin-bottom:14px;">Output files</div>
+    <div id="file-list-loading" style="color:var(--t4);font-size:12px;padding:16px;">Loading output files…</div>
+    <div class="file-list hidden" id="output-files"></div>
+
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary" id="download-all-btn" onclick="downloadAll()" style="display:none;">↓ Download all (ZIP)</button>
+    </div>
+
+    <div style="margin-top:28px;">
+      <div class="section-head" style="margin-bottom:14px;">Case notes</div>
+      <textarea id="notes-ta" rows="5" style="width:100%;background:var(--bg-e);border:1px solid var(--border);border-radius:var(--r-lg);color:var(--t1);padding:10px 14px;font-size:13px;outline:none;resize:vertical;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">{{ sar.notes or '' }}</textarea>
+      <button class="btn btn-ghost" style="margin-top:8px;" onclick="saveNotes()">Save notes</button>
+      <span id="notes-saved" style="font-size:11px;color:var(--green);margin-left:8px;display:none;">Saved</span>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-head" style="margin-bottom:14px;">Export &amp; transfer</div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:12px;color:var(--t3);margin-bottom:4px;">Download a .sarpack bundle for transfer to another SAR Redact instance.</div>
+        <a href="/api/sar/{{ sar.id }}/export" class="btn btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+          ↓ Export .sarpack
+        </a>
+      </div>
+    </div>
+
+    {% if current_user and current_user.role == 'admin' %}
+    <div class="section-head" style="margin-bottom:14px;">Admin actions</div>
+    <div class="card">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        {% if not sar.clock_paused %}
+        <div style="font-size:12px;color:var(--t3);">
+          Deadline clock: running<br>
+          Total paused: {{ sar.total_paused_days }} day{{ 's' if sar.total_paused_days != 1 else '' }}
+        </div>
+        {% else %}
+        <div style="font-size:12px;color:var(--amber);">Clock paused. Paused {{ sar.total_paused_days }}d total.</div>
+        <button class="btn btn-ghost" onclick="resumeClock()">Resume clock</button>
+        {% endif %}
+        <div class="toolbar-divider" style="width:100%;height:1px;"></div>
+        <button class="btn-sm" style="color:var(--t4);" onclick="archiveSar()">Archive SAR</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSar()">Delete SAR</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const SAR_ID = "{{ sar.id }}";
+
+fetch('/api/sar/' + SAR_ID + '/outputs')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('file-list-loading').style.display = 'none';
+    const list = document.getElementById('output-files');
+    list.classList.remove('hidden');
+    const allFiles = [...(data.redacted_files || []), ...(data.log_file ? [data.log_file] : [])];
+    if (!allFiles.length) {
+      list.innerHTML = '<div style="color:var(--t4);font-size:12px;padding:12px;">No output files found. Try re-finalising from the review screen.</div>';
+      return;
+    }
+    list.innerHTML = allFiles.map(fn => `
+      <div class="file-row">
+        <div><div class="file-row-name">${fn}</div><div class="file-row-meta">${fn.endsWith('_redacted.pdf') ? 'Redacted PDF' : 'Audit log'}</div></div>
+        <a href="/api/sar/${SAR_ID}/download/${fn}" class="btn-sm" download>↓ Download</a>
+      </div>`).join('');
+    document.getElementById('download-all-btn').style.display = 'inline-flex';
+  })
+  .catch(() => {
+    document.getElementById('file-list-loading').textContent = 'Could not load output files.';
+  });
+
+function downloadAll() { window.location.href = '/api/sar/' + SAR_ID + '/download-all'; }
+
+function saveNotes() {
+  const notes = document.getElementById('notes-ta').value;
+  fetch('/api/sar/' + SAR_ID + '/notes', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({notes}) })
+    .then(() => {
+      const el = document.getElementById('notes-saved');
+      el.style.display = 'inline';
+      setTimeout(() => el.style.display = 'none', 2000);
+    });
+}
+
+function archiveSar() {
+  if (!confirm('Archive this SAR? It will move off the active dashboard.')) return;
+  fetch('/api/sar/' + SAR_ID + '/archive', { method: 'POST' })
+    .then(r => r.json()).then(d => { if (d.ok) window.location.href = '/'; else alert(d.error); });
+}
+
+function deleteSar() {
+  if (!confirm('Permanently delete this SAR and all output files?\n\nThis cannot be undone.')) return;
+  fetch('/api/sar/' + SAR_ID + '/delete', { method: 'POST' })
+    .then(r => r.json()).then(d => { if (d.ok) window.location.href = '/'; else alert(d.error); });
+}
+
+function resumeClock() {
+  const reason = prompt('Reason for resuming clock (optional):') || '';
+  fetch('/api/sar/' + SAR_ID + '/resume-clock', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({reason}) })
+    .then(() => location.reload());
+}
+</script>
+{% endblock %}

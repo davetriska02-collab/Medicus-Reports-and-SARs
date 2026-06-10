@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}New Report — SAR Redact{% endblock %}
+{% block extra_head %}
+<style>
+.template-card { background:var(--bg-e); border:2px solid var(--border); border-radius:var(--r-lg); padding:16px; cursor:pointer; transition:border-color 0.15s,background 0.15s; }
+.template-card:hover { border-color:var(--border-hi); background:var(--bg-ee); }
+.template-card.selected { border-color:var(--accent); background:rgba(74,127,184,0.08); }
+.template-cat { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--t4); margin-bottom:4px; }
+.template-name { font-size:13px; font-weight:500; color:var(--t1); margin-bottom:4px; }
+.template-desc { font-size:11px; color:var(--t4); }
+#step2, #step3, #progress-card { display:none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="/reports" class="page-header-back">← Reports</a>
+  <h1>New Medical Report</h1>
+  <div class="heading-rule"></div>
+</div>
+
+<div id="progress-card" class="job-progress" style="margin-bottom:20px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+    <span class="mono-label">Extracting evidence</span>
+    <span id="job-pct" style="font-family:var(--mono);font-size:10px;color:var(--t4);">0%</span>
+  </div>
+  <div class="job-bar-track"><div class="job-bar-fill" id="job-fill" style="width:0%"></div></div>
+  <div class="job-step" id="job-step">Initialising...</div>
+</div>
+
+<div id="step1" class="form-card">
+  <div class="form-card-title">Step 1 — Select template</div>
+  <input type="hidden" id="selected-template" name="template_id">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px;">
+    {% for t in templates %}
+    <div class="template-card" data-tid="{{ t.id }}" onclick="selectTemplate('{{ t.id }}', '{{ t.name|e }}')">
+      <div class="template-cat">{{ t.category }}</div>
+      <div class="template-name">{{ t.name }}</div>
+      <div class="template-desc">{{ t.description or (t.questions|length|string ~ ' questions') }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="step2" class="form-card">
+  <div class="form-card-title">Step 2 — Patient details</div>
+  <div class="form-grid">
+    <div class="form-group form-group-wide">
+      <label>Full name <span class="required">*</span></label>
+      <input type="text" id="full_name" placeholder="Patient full name" required>
+    </div>
+    <div class="form-group">
+      <label>Date of birth</label>
+      <input type="date" id="date_of_birth">
+    </div>
+    <div class="form-group">
+      <label>NHS Number</label>
+      <input type="text" id="nhs_number">
+    </div>
+    <div class="form-group form-group-wide">
+      <label>Address</label>
+      <input type="text" id="address">
+    </div>
+    <div class="form-group">
+      <label>Reporting GP</label>
+      <input type="text" id="gp_name" placeholder="e.g. Dr Triska">
+    </div>
+    <div class="form-group">
+      <label>Practice</label>
+      <input type="text" id="gp_practice" placeholder="e.g. Witley &amp; Milford Surgery">
+    </div>
+  </div>
+</div>
+
+<div id="step3" class="form-card">
+  <div class="form-card-title">Step 3 — Medical records</div>
+  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+    <input type="file" id="file-input" multiple accept=".pdf,.tif,.tiff,.rtf,.txt,.zip">
+    <div class="upload-zone-icon">⊕</div>
+    <div class="upload-zone-text">Click to add files</div>
+    <div class="upload-zone-hint">PDF, TIF, RTF, TXT, ZIP</div>
+  </div>
+  <div class="file-chips" id="file-chips"></div>
+  <button class="btn btn-primary" style="margin-top:16px;width:100%;padding:12px;" onclick="submitReport()">
+    Generate Report
+  </button>
+  <div id="submit-error" class="alert alert-error" style="display:none;margin-top:10px;"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let selectedTid = null;
+const files = [];
+
+function selectTemplate(tid, name) {
+  document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+  document.querySelector('[data-tid="' + tid + '"]').classList.add('selected');
+  selectedTid = tid;
+  document.getElementById('step2').style.display = 'block';
+  document.getElementById('step3').style.display = 'block';
+  document.getElementById('step2').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+const uz = document.getElementById('upload-zone');
+const fi = document.getElementById('file-input');
+fi.addEventListener('change', () => addFiles(fi.files));
+uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('drag-over'); });
+uz.addEventListener('dragleave', () => uz.classList.remove('drag-over'));
+uz.addEventListener('drop', e => { e.preventDefault(); uz.classList.remove('drag-over'); addFiles(e.dataTransfer.files); });
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    if (!files.find(x => x.name === f.name)) files.push(f);
+  }
+  renderChips();
+}
+
+function renderChips() {
+  const c = document.getElementById('file-chips');
+  c.innerHTML = files.map((f,i) => `
+    <div class="file-chip">
+      <span class="file-chip-ext">${f.name.split('.').pop()}</span>
+      ${f.name}
+      <span class="file-chip-remove" onclick="removeFile(${i})">×</span>
+    </div>`).join('');
+}
+
+function removeFile(i) { files.splice(i,1); renderChips(); }
+
+function submitReport() {
+  if (!selectedTid) { alert('Select a template first.'); return; }
+  if (!document.getElementById('full_name').value.trim()) { alert('Patient name is required.'); return; }
+  if (!files.length) { alert('Add at least one file.'); return; }
+
+  const fd = new FormData();
+  fd.append('template_id', selectedTid);
+  fd.append('full_name', document.getElementById('full_name').value.trim());
+  fd.append('date_of_birth', document.getElementById('date_of_birth').value);
+  fd.append('nhs_number', document.getElementById('nhs_number').value.trim());
+  fd.append('address', document.getElementById('address').value.trim());
+  fd.append('gp_name', document.getElementById('gp_name').value.trim());
+  fd.append('gp_practice', document.getElementById('gp_practice').value.trim());
+  files.forEach(f => fd.append('pdf_files', f));
+
+  document.getElementById('progress-card').style.display = 'block';
+  document.getElementById('step1').style.display = 'none';
+  document.getElementById('step2').style.display = 'none';
+  document.getElementById('step3').style.display = 'none';
+
+  fetch('/api/reports/create', { method:'POST', body:fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { document.getElementById('submit-error').textContent = data.error; document.getElementById('submit-error').style.display='block'; return; }
+      const es = new EventSource('/api/job/' + data.job_id + '/stream');
+      es.onmessage = e => {
+        const ev = JSON.parse(e.data);
+        document.getElementById('job-fill').style.width = (ev.progress * 100) + '%';
+        document.getElementById('job-pct').textContent = Math.round(ev.progress * 100) + '%';
+        if (ev.step) document.getElementById('job-step').textContent = ev.step;
+        if (ev.done) { es.close(); window.location.href = '/reports/' + ev.report_id; }
+        if (ev.error) { es.close(); document.getElementById('job-step').textContent = 'Error: ' + ev.error; document.getElementById('job-step').style.color = 'var(--red)'; }
+      };
+    });
+}
+</script>
+{% endblock %}

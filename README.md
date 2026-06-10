@@ -7,6 +7,10 @@ Built on the Medicus Suite design language. Processes GP medical records for Sub
 
 ## Quick start
 
+> 🟢 **Not technical?** Read the [**Easy Install Guide**](EASY_INSTALL_GUIDE.md)
+> instead — step-by-step, written for normal humans, covers everything
+> including the "downloads blocked" case and the whole-practice server setup.
+
 **Windows**
 1. Extract this folder somewhere permanent (e.g. `C:\SAR Redact\`)
 2. Double-click `start_server.bat`

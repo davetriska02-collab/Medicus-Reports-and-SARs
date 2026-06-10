@@ -1,5 +1,8 @@
 # Installation Guide
 
+> **Non-technical staff:** use the [Easy Install Guide](EASY_INSTALL_GUIDE.md)
+> instead. This document is the technical reference.
+
 
 ## NHS network/home drives
 

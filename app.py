@@ -33,6 +33,7 @@ from sar.fsutil import atomic_write_json, unique_path
 from sar.audit import log_event as _audit_event, read_events as _audit_read, known_actions as _audit_actions
 from sar import store as _store
 from sar.backup import start_backup_thread as _start_backup_thread, get_status as _backup_status
+from sar import dictionary as _dictionary
 
 _SERVER_STARTED = datetime.now(timezone.utc)
 
@@ -127,7 +128,7 @@ REPORT_OUTPUT_DIR = str(BASE_DIR / "output" / "reports")
 for _d in (UPLOAD_DIR, OUTPUT_DIR, REPORT_UPLOAD_DIR, REPORT_OUTPUT_DIR):
     os.makedirs(_d, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {"pdf","tif","tiff","rtf","txt","zip","png","jpg","jpeg","html","htm","cdax"}
+ALLOWED_EXTENSIONS = {"pdf","tif","tiff","rtf","txt","zip","png","jpg","jpeg","html","htm","cdax","docx","eml","msg"}
 def allowed_file(f): return "." in f and f.rsplit(".",1)[1].lower() in ALLOWED_EXTENSIONS
 def _sar_dir(sid): return os.path.join(UPLOAD_DIR, sid)
 def _resolve_path(sid, stored):
@@ -315,13 +316,131 @@ def _cdax_to_pdf(p):
     doc=fitz.open(); pg=doc.new_page()
     pg.insert_textbox(fitz.Rect(50,50,545,792),plain,fontsize=9,fontname="helv")
     out=p.rsplit(".",1)[0]+".pdf"; doc.save(out); doc.close(); return out
+def _docx_to_pdf(p):
+    from docx import Document
+    import fitz
+    doc=Document(p); lines=[]
+    for para in doc.paragraphs:
+        lines.append(para.text)
+    for tbl in doc.tables:
+        for row in tbl.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    if para.text.strip():
+                        lines.append(para.text)
+    text="\n".join(lines)
+    fdoc=fitz.open(); pg=fdoc.new_page()
+    pg.insert_textbox(fitz.Rect(50,50,545,792),text,fontsize=10,fontname="helv")
+    out=p.rsplit(".",1)[0]+".pdf"; fdoc.save(out); fdoc.close(); return out
+
+def _build_email_text(sender, to, cc, date, subject, body, attachment_names):
+    """Assemble a plain-text representation of an email message."""
+    hdr=[f"From: {sender}",f"To: {to}"]
+    if cc: hdr.append(f"Cc: {cc}")
+    hdr.extend([f"Date: {date}",f"Subject: {subject}"])
+    parts=["\n".join(hdr),"",body]
+    if attachment_names:
+        parts.append(""); parts.append("Attachments:")
+        for n in attachment_names: parts.append(f"  - {n}")
+    return "\n".join(parts)
+
+def _text_to_pdf_string(text, out_path):
+    import fitz
+    doc=fitz.open(); pg=doc.new_page()
+    pg.insert_textbox(fitz.Rect(50,50,545,792),text,fontsize=10,fontname="helv")
+    doc.save(out_path); doc.close()
+
+_EML_ATT_CAP = 100*1024*1024  # 100 MB per attachment
+def _eml_to_pdf(p):
+    import email, email.policy, re as _re
+    sar_dir=os.path.dirname(p); base=os.path.splitext(os.path.basename(p))[0]
+    with open(p,"rb") as f:
+        msg=email.parser.BytesParser(policy=email.policy.default).parse(f)
+    sender=str(msg.get("From",""))
+    to=str(msg.get("To",""))
+    cc=str(msg.get("Cc",""))
+    date=str(msg.get("Date",""))
+    subject=str(msg.get("Subject",""))
+    body=""
+    att_names=[]; extra_files=[]
+    for part in msg.walk():
+        ct=part.get_content_type(); cd=part.get_content_disposition() or ""
+        if ct=="text/plain" and "attachment" not in cd and not body:
+            body=part.get_content()
+        elif ct=="text/html" and "attachment" not in cd and not body:
+            raw=part.get_content()
+            body=_re.sub(r"<[^>]+>","",raw)
+        elif "attachment" in cd or part.get_filename():
+            fn=part.get_filename() or "attachment"
+            ext=fn.rsplit(".",1)[-1].lower() if "." in fn else ""
+            size=len(part.get_payload(decode=True) or b"")
+            if size>_EML_ATT_CAP: att_names.append(fn+" (too large, not ingested)"); continue
+            att_names.append(fn)
+            if ext in ALLOWED_EXTENSIONS-{"zip","eml","msg"}:
+                safe_fn=secure_filename(f"{base}__att__{fn}")
+                dest=unique_path(sar_dir,safe_fn)
+                data=part.get_payload(decode=True) or b""
+                with open(dest,"wb") as df: df.write(data)
+                try: extra_files.append(_convert_single(dest,ext))
+                except Exception: log.warning("Could not convert email attachment %s",fn,exc_info=True)
+    text=_build_email_text(sender,to,cc,date,subject,body or "(no body)",att_names)
+    out=p.rsplit(".",1)[0]+".pdf"
+    _text_to_pdf_string(text,out)
+    return [out]+extra_files
+
+def _msg_to_pdf(p):
+    try:
+        import extract_msg as _emsg
+    except ImportError:
+        raise RuntimeError(".msg support requires extract-msg package (pip install extract-msg==0.55.0)")
+    import re as _re
+    sar_dir=os.path.dirname(p); base=os.path.splitext(os.path.basename(p))[0]
+    m=_emsg.Message(p)
+    sender=m.sender or ""
+    to=m.to or ""
+    cc=m.cc or ""
+    date=str(m.date or "")
+    subject=m.subject or ""
+    body=m.body or ""
+    att_names=[]; extra_files=[]
+    for att in (m.attachments or []):
+        fn=getattr(att,"longFilename",None) or getattr(att,"shortFilename",None) or "attachment"
+        ext=fn.rsplit(".",1)[-1].lower() if "." in fn else ""
+        data=att.data if hasattr(att,"data") else None
+        if data is None:
+            att_names.append(fn+" (no data)"); continue
+        if len(data)>_EML_ATT_CAP: att_names.append(fn+" (too large, not ingested)"); continue
+        att_names.append(fn)
+        if ext in ALLOWED_EXTENSIONS-{"zip","eml","msg"}:
+            safe_fn=secure_filename(f"{base}__att__{fn}")
+            dest=unique_path(sar_dir,safe_fn)
+            with open(dest,"wb") as df: df.write(data)
+            try: extra_files.append(_convert_single(dest,ext))
+            except Exception: log.warning("Could not convert msg attachment %s",fn,exc_info=True)
+    text=_build_email_text(sender,to,cc,date,subject,body or "(no body)",att_names)
+    out=p.rsplit(".",1)[0]+".pdf"
+    _text_to_pdf_string(text,out)
+    return [out]+extra_files
+
 def _convert_single(filepath, ext):
     m={"tif":_tif_to_pdf,"tiff":_tif_to_pdf,"rtf":_rtf_to_pdf,"txt":_txt_to_pdf,
        "png":_img_to_pdf,"jpg":_img_to_pdf,"jpeg":_img_to_pdf,
-       "html":_html_to_pdf,"htm":_html_to_pdf,"cdax":_cdax_to_pdf}
+       "html":_html_to_pdf,"htm":_html_to_pdf,"cdax":_cdax_to_pdf,
+       "docx":_docx_to_pdf}
     if ext=="pdf": return filepath
+    if ext in ("eml","msg"):
+        fn={"eml":_eml_to_pdf,"msg":_msg_to_pdf}[ext]
+        results=fn(filepath)
+        return results[0] if results else filepath
     fn=m.get(ext)
     return fn(filepath) if fn else filepath
+
+def _convert_single_all(filepath, ext):
+    """Like _convert_single but returns all produced files (email multi-output)."""
+    if ext in ("eml","msg"):
+        fn={"eml":_eml_to_pdf,"msg":_msg_to_pdf}[ext]
+        return fn(filepath)
+    return [_convert_single(filepath,ext)]
 # Zip extraction safety caps — one hostile/corrupt upload must not be able to
 # fill the disk of a shared server.
 ZIP_MAX_ENTRIES = 2000
@@ -677,7 +796,7 @@ def create_sar():
                 if ext=="zip":
                     def zp(done,total): _emit(q,0.05+0.20*(i+done/max(total,1))/nf,f"Converting file {done}/{total}...")
                     sar.pdf_files.extend(_extract_zip(fp,sd,emit_fn=zp))
-                else: sar.pdf_files.append(_convert_single(fp,ext))
+                else: sar.pdf_files.extend(_convert_single_all(fp,ext))
             if not sar.pdf_files: q.put({"error":"No valid files after conversion"}); return
             np=len(sar.pdf_files); _emit(q,0.25,"Reading document dates...")
             for pp in sar.pdf_files:
@@ -889,6 +1008,7 @@ def finalise_sar(sid):
                              "page_num":c.page_num,"category":c.category.value}
                             for c in failed]
     _save(sar)
+    _dictionary.record_unknown_approved(sar)
     _audit("sar_finalised", target=sid,
            detail=f"{len(rf)} files, {len(failed)} failed redactions")
     if failed:
@@ -1270,7 +1390,7 @@ def create_report():
                 if ext=="zip":
                     def zp(done,total): _emit(jq,0.05+0.20*(i+done/max(total,1))/nf,f"Converting {done}/{total}...")
                     pf.extend(_extract_zip(fp,rd,emit_fn=zp))
-                else: pf.append(_convert_single(fp,ext))
+                else: pf.extend(_convert_single_all(fp,ext))
             if not pf: jq.put({"error":"No valid files after conversion"}); return
             _emit(jq,0.27,"Reading dates..."); dd={}
             for pp in pf:
@@ -1532,6 +1652,29 @@ def admin_status():
         "pending_jobs":len(_job_queues),
         "backup":_backup_status(),
     })
+
+@app.route("/api/admin/name-suggestions")
+@require_admin
+def admin_name_suggestions():
+    return jsonify(_dictionary.get_suggestions())
+
+@app.route("/api/admin/name-suggestions/accept",methods=["POST"])
+@require_admin
+def admin_name_suggestions_accept():
+    name=(request.json or {}).get("name","").strip().lower()
+    if not name: return jsonify({"error":"name required"}),400
+    _dictionary.accept_suggestion(name)
+    _audit("dictionary_name_added",detail=name)
+    return jsonify({"ok":True})
+
+@app.route("/api/admin/name-suggestions/dismiss",methods=["POST"])
+@require_admin
+def admin_name_suggestions_dismiss():
+    name=(request.json or {}).get("name","").strip().lower()
+    if not name: return jsonify({"error":"name required"}),400
+    _dictionary.dismiss_suggestion(name)
+    _audit("dictionary_suggestion_dismissed",detail=name)
+    return jsonify({"ok":True})
 
 @app.errorhandler(403)
 def forbidden(e): return render_template("403.html"),403

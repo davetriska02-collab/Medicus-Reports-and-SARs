@@ -49,7 +49,7 @@ To update manually: download the latest zip, extract alongside your existing ins
 
 ## Supported file formats
 
-PDF · TIF/TIFF · RTF · TXT · PNG · JPG · ZIP (containing any of the above) · CDAX (GP2GP clinical documents)
+PDF · TIF/TIFF · RTF · TXT · DOCX · EML · MSG · PNG · JPG · ZIP (containing any of the above) · CDAX (GP2GP clinical documents)
 
 ---
 

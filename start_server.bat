@@ -136,25 +136,35 @@ echo   This takes 3-8 minutes depending on connection
 echo  ------------------------------------------------
 echo.
 
-echo  [1/4] Installing Flask (web framework)...
+echo  [1/6] Installing Flask (web framework)...
 "%PYEXE%" -m pip install flask==3.1.2 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: Flask install failed. & pause & exit /b 1 )
-echo  [1/4] Done.
+echo  [1/6] Done.
 
-echo  [2/4] Installing Waitress (server)...
+echo  [2/6] Installing Waitress (server)...
 "%PYEXE%" -m pip install waitress==3.0.2 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: Waitress install failed. & pause & exit /b 1 )
-echo  [2/4] Done.
+echo  [2/6] Done.
 
-echo  [3/4] Installing striprtf (RTF support)...
+echo  [3/6] Installing striprtf (RTF support)...
 "%PYEXE%" -m pip install striprtf==0.0.29 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: striprtf install failed. & pause & exit /b 1 )
-echo  [3/4] Done.
+echo  [3/6] Done.
 
-echo  [4/4] Installing PyMuPDF (PDF engine -- largest, ~2-5 min)...
+echo  [4/6] Installing PyMuPDF (PDF engine -- largest, ~2-5 min)...
 "%PYEXE%" -m pip install pymupdf==1.26.4 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: PyMuPDF install failed. & pause & exit /b 1 )
-echo  [4/4] Done.
+echo  [4/6] Done.
+
+echo  [5/6] Installing python-docx (DOCX support)...
+"%PYEXE%" -m pip install python-docx==1.2.0 --quiet --no-warn-script-location
+if errorlevel 1 ( echo  ERROR: python-docx install failed. & pause & exit /b 1 )
+echo  [5/6] Done.
+
+echo  [6/6] Installing extract-msg (MSG email support)...
+"%PYEXE%" -m pip install extract-msg==0.55.0 --quiet --no-warn-script-location
+if errorlevel 1 ( echo  ERROR: extract-msg install failed. & pause & exit /b 1 )
+echo  [6/6] Done.
 
 echo.
 echo  ------------------------------------------------
@@ -178,22 +188,30 @@ if not exist "%ROOT%venv\Scripts\python.exe" (
     echo   This takes 3-8 minutes depending on connection
     echo  ------------------------------------------------
     echo.
-    echo  [1/4] Installing Flask...
+    echo  [1/6] Installing Flask...
     "%ROOT%venv\Scripts\pip" install flask --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: Flask install failed. & pause & exit /b 1 )
-    echo  [1/4] Done.
-    echo  [2/4] Installing Waitress...
+    echo  [1/6] Done.
+    echo  [2/6] Installing Waitress...
     "%ROOT%venv\Scripts\pip" install waitress --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: Waitress install failed. & pause & exit /b 1 )
-    echo  [2/4] Done.
-    echo  [3/4] Installing striprtf...
+    echo  [2/6] Done.
+    echo  [3/6] Installing striprtf...
     "%ROOT%venv\Scripts\pip" install striprtf --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: striprtf install failed. & pause & exit /b 1 )
-    echo  [3/4] Done.
-    echo  [4/4] Installing PyMuPDF (~2-5 min)...
+    echo  [3/6] Done.
+    echo  [4/6] Installing PyMuPDF (~2-5 min)...
     "%ROOT%venv\Scripts\pip" install pymupdf --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: PyMuPDF install failed. & pause & exit /b 1 )
-    echo  [4/4] Done.
+    echo  [4/6] Done.
+    echo  [5/6] Installing python-docx (DOCX support)...
+    "%ROOT%venv\Scripts\pip" install python-docx==1.2.0 --quiet --no-warn-script-location
+    if errorlevel 1 ( echo  ERROR: python-docx install failed. & pause & exit /b 1 )
+    echo  [5/6] Done.
+    echo  [6/6] Installing extract-msg (MSG email support)...
+    "%ROOT%venv\Scripts\pip" install extract-msg==0.55.0 --quiet --no-warn-script-location
+    if errorlevel 1 ( echo  ERROR: extract-msg install failed. & pause & exit /b 1 )
+    echo  [6/6] Done.
     echo.
     echo  ------------------------------------------------
     echo   [OK] All packages installed.

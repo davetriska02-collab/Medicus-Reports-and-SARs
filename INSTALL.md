@@ -69,9 +69,17 @@ Options:
 Ask your IT team to install Python 3.12 from `https://www.python.org/downloads`
 with "Add python.exe to PATH" ticked. No other configuration needed.
 
-**Option C — Pre-built bundle**
-Contact the developer for a fully self-contained bundle with Python and all
-dependencies pre-included (no internet required at all — ~300 MB zip).
+**Option C — Offline bundle (recommended for proxied-off practices)**
+A fully self-contained zip (~20 MB) with Python and all dependencies
+pre-installed — the recipient extracts it and runs `start_server.bat` with
+no internet needed at any point. Build it on any machine with internet:
+
+```
+python tools\build_offline_bundle.py          # standard
+python tools\build_offline_bundle.py --tls    # includes HTTPS support
+```
+
+The zip appears in `dist\`. Transfer it on a USB stick or via NHSmail.
 
 ---
 

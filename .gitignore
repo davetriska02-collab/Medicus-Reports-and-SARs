@@ -8,6 +8,7 @@ output/*
 
 # Runtime
 CONNECT.txt
+dist/
 python-runtime/
 venv/
 __pycache__/

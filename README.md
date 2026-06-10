@@ -55,6 +55,14 @@ All data is stored locally in the `data/` subfolder. Nothing is transmitted exte
 
 ---
 
+## Compliance & security
+
+- [`SECURITY.md`](SECURITY.md) — security architecture and data flows
+- [`docs/trust-pack/`](docs/trust-pack/) — DPIA template, DCB0129 clinical safety case + hazard log, DSPT mapping
+- `Admin → Audit` — access audit trail · `Admin → IG` — SAR turnaround report
+
+---
+
 ## Version history
 
 | Version | Notes |

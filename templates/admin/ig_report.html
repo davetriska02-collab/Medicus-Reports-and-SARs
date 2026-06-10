@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}IG Report — SAR Redact{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px;">
+  <div>
+    <h1>IG Report — SAR Performance</h1>
+    <div class="heading-rule"></div>
+  </div>
+  <a class="btn btn-ghost" href="/admin/ig-report.csv">↓ Export CSV</a>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:28px;">
+  <div class="card"><div class="card-body" style="text-align:center;">
+    <div style="font-size:24px;font-weight:600;">{{ stats.total }}</div>
+    <div class="mono-label">Total SARs</div>
+  </div></div>
+  <div class="card"><div class="card-body" style="text-align:center;">
+    <div style="font-size:24px;font-weight:600;">{{ stats.completed }}</div>
+    <div class="mono-label">Completed</div>
+  </div></div>
+  <div class="card"><div class="card-body" style="text-align:center;">
+    <div style="font-size:24px;font-weight:600;color:{{ 'var(--green)' if stats.on_time_pct is not none and stats.on_time_pct >= 90 else 'var(--amber)' }};">
+      {{ stats.on_time_pct ~ '%' if stats.on_time_pct is not none else '—' }}</div>
+    <div class="mono-label">Within statutory deadline</div>
+  </div></div>
+  <div class="card"><div class="card-body" style="text-align:center;">
+    <div style="font-size:24px;font-weight:600;">{{ stats.avg_days if stats.avg_days is not none else '—' }}</div>
+    <div class="mono-label">Avg days to complete</div>
+  </div></div>
+  <div class="card"><div class="card-body" style="text-align:center;">
+    <div style="font-size:24px;font-weight:600;color:{{ 'var(--red)' if stats.overdue_open else 'var(--t1)' }};">{{ stats.overdue_open }}</div>
+    <div class="mono-label">Open &amp; overdue</div>
+  </div></div>
+  <div class="card"><div class="card-body" style="text-align:center;">
+    <div style="font-size:24px;font-weight:600;">{{ stats.paused_used }}</div>
+    <div class="mono-label">Used stop-the-clock</div>
+  </div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start;">
+  <div>
+    <div class="section-head" style="margin-bottom:12px;">By month</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="text-align:left;color:var(--t4);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px 6px 0;">Month</th>
+        <th style="padding:6px 8px;">Received</th>
+        <th style="padding:6px 0 6px 8px;">Completed</th>
+      </tr></thead>
+      <tbody>
+        {% for month, m in stats.monthly %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 8px 6px 0;font-family:var(--mono);">{{ month }}</td>
+          <td style="padding:6px 8px;">{{ m.received }}</td>
+          <td style="padding:6px 0 6px 8px;">{{ m.completed }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <div class="section-head" style="margin-bottom:12px;">Completed SARs</div>
+    {% if not stats.rows %}
+    <div style="color:var(--t4);font-size:13px;padding:12px 0;">No completed SARs yet.</div>
+    {% else %}
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="text-align:left;color:var(--t4);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 10px 6px 0;">Subject</th>
+        <th style="padding:6px 10px;">Received</th>
+        <th style="padding:6px 10px;">Completed</th>
+        <th style="padding:6px 10px;">Days</th>
+        <th style="padding:6px 10px;">Paused</th>
+        <th style="padding:6px 10px;">On time</th>
+        <th style="padding:6px 0 6px 10px;">Redactions</th>
+      </tr></thead>
+      <tbody>
+        {% for r in stats.rows %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 10px 6px 0;">{{ r.subject }}</td>
+          <td style="padding:6px 10px;font-family:var(--mono);font-size:11px;">{{ r.received }}</td>
+          <td style="padding:6px 10px;font-family:var(--mono);font-size:11px;">{{ r.completed }}</td>
+          <td style="padding:6px 10px;">{{ r.days if r.days is not none else '—' }}</td>
+          <td style="padding:6px 10px;">{{ r.paused_days or '' }}</td>
+          <td style="padding:6px 10px;color:{{ 'var(--green)' if r.on_time else 'var(--red)' }};">{{ '✓' if r.on_time else '✗' }}</td>
+          <td style="padding:6px 0 6px 10px;">{{ r.redactions }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

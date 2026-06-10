@@ -22,6 +22,7 @@
       {% if current_user and current_user.role == 'admin' %}
       <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>Users</a>
       <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}>Audit</a>
+      <a href="/admin/ig-report" {% if request.path.startswith('/admin/ig-report') %}class="active"{% endif %}>IG</a>
       {% endif %}
       <a href="/help" {% if request.path == '/help' %}class="active"{% endif %}>Help</a>
     </div>

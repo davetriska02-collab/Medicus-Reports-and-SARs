@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -48,6 +48,7 @@ from sar.report_templates import (get_all_templates, get_template, save_custom_t
                                     delete_custom_template)
 from sar.report_store import save_report, load_report, load_all_reports, delete_report
 from sar.evidence_extractor import extract_evidence
+from sar.response_pack import generate_cover_letter, generate_certificate
 from sar.report_generator import generate_report_pdf
 
 app = Flask(__name__)
@@ -175,6 +176,7 @@ def _to_dict(sar):
         "status": sar.status, "archived": getattr(sar,"archived",False),
         "redaction_failures": getattr(sar,"redaction_failures",[]),
         "due_date": sar.due_date, "notes": sar.notes, "workflow_status": sar.workflow_status,
+        "completed_at": getattr(sar, "completed_at", ""),
         "allocated_to": sar.allocated_to, "allocated_to_name": sar.allocated_to_name,
         "clock_paused": sar.clock_paused, "paused_at": sar.paused_at,
         "total_paused_days": sar.total_paused_days, "pause_log": sar.pause_log,
@@ -232,6 +234,7 @@ def _sar_from_dict(data):
         paused_at=data.get("paused_at",""),
         total_paused_days=data.get("total_paused_days",0),
         pause_log=data.get("pause_log",[]),
+        completed_at=data.get("completed_at",""),
     )
     sar.archived = data.get("archived", False)
     sar.redaction_failures = data.get("redaction_failures", [])
@@ -874,6 +877,8 @@ def finalise_sar(sid):
         log.exception("Finalise failed for SAR %s", sid)
         return jsonify({"error":f"Redaction failed: {e}"}),500
     sar.status="complete"; sar.workflow_status="complete"
+    if not getattr(sar,"completed_at",""):
+        sar.completed_at=datetime.now(timezone.utc).isoformat()
     sar.redaction_failures=[{"id":c.id,"text":c.text,"source_file":c.source_file,
                              "page_num":c.page_num,"category":c.category.value}
                             for c in failed]
@@ -891,7 +896,34 @@ def list_outputs(sid):
     if not os.path.isdir(od): return jsonify({"error":"No output files"}),404
     fs=os.listdir(od)
     return jsonify({"redacted_files":[f for f in fs if f.endswith("_redacted.pdf")],
-                    "log_file":next((f for f in fs if f.startswith("redaction_log_")),None)})
+                    "log_file":next((f for f in fs if f.startswith("redaction_log_")),None),
+                    "pack_files":[f for f in fs if f.startswith(("cover_letter_","certificate_of_redaction_"))]})
+@app.route("/api/sar/<sid>/response-pack",methods=["POST"])
+@require_admin
+def generate_response_pack(sid):
+    """Generate the disclosure cover letter + certificate of redaction."""
+    sar=_get(sid)
+    if not sar: return jsonify({"error":"Not found"}),404
+    if sar.status!="complete":
+        return jsonify({"error":"Finalise the SAR before generating the response pack"}),400
+    if getattr(sar,"redaction_failures",[]):
+        return jsonify({"error":f"{len(sar.redaction_failures)} approved redaction(s) failed to apply — "
+                        "resolve them (manual redaction + re-finalise) before generating "
+                        "the response pack"}),409
+    od=os.path.join(OUTPUT_DIR,sid)
+    if not os.path.isdir(od): return jsonify({"error":"No output files — finalise first"}),400
+    cfg=_get_practice_config()
+    custom=(request.json or {}).get("custom_paragraph","")
+    try:
+        page_counts={os.path.basename(p):get_page_count(p) for p in sar.pdf_files if os.path.exists(p)}
+        letter=generate_cover_letter(sar,cfg,od,custom_paragraph=custom)
+        cert=generate_certificate(sar,cfg,od,page_counts=page_counts)
+    except Exception as e:
+        log.exception("Response pack generation failed for SAR %s",sid)
+        return jsonify({"error":f"Response pack generation failed: {e}"}),500
+    _audit("response_pack_generated",target=sid,detail=sar.subject.full_name)
+    return jsonify({"ok":True,"files":[os.path.basename(letter),os.path.basename(cert)]})
+
 @app.route("/api/sar/<sid>/download/<filename>")
 @require_login
 def download_file(sid,filename):
@@ -1355,6 +1387,81 @@ def admin_audit_csv():
     _audit("audit_exported", detail=f"{len(events)} events")
     return Response(buf.getvalue(),mimetype="text/csv",
                     headers={"Content-Disposition":"attachment; filename=audit_log.csv"})
+
+def _ig_stats():
+    """SAR turnaround statistics for the IG report (DSPT / practice meeting evidence)."""
+    def _d(iso):
+        try: return datetime.fromisoformat(str(iso)).date()
+        except (ValueError, TypeError): return None
+    sars=_all()
+    completed=[]; open_sars=[]
+    for s in sars:
+        if s.status=="complete" and getattr(s,"completed_at",""):
+            completed.append(s)
+        elif s.status!="complete":
+            open_sars.append(s)
+    rows=[]
+    on_time=0
+    turnarounds=[]
+    for s in completed:
+        c=_d(s.created_at); f=_d(s.completed_at); due=_d(s.due_date)
+        days=(f-c).days if c and f else None
+        eff_due=due+timedelta(days=s.total_paused_days) if due else None
+        ok=bool(f and eff_due and f<=eff_due)
+        if ok: on_time+=1
+        if days is not None: turnarounds.append(days)
+        redactions=sum(1 for cd in s.candidates if cd.status in
+                       (RedactionStatus.AUTO_REDACT,RedactionStatus.APPROVED))
+        rows.append({"id":s.id,"subject":s.subject.full_name,
+                     "received":str(c or ""),"completed":str(f or ""),
+                     "days":days,"paused_days":s.total_paused_days,
+                     "on_time":ok,"redactions":redactions,
+                     "month":str(c)[:7] if c else ""})
+    monthly={}
+    for s in sars:
+        c=_d(s.created_at)
+        if not c: continue
+        m=str(c)[:7]
+        monthly.setdefault(m,{"received":0,"completed":0})
+        monthly[m]["received"]+=1
+    for r in rows:
+        if r["completed"]:
+            m=r["completed"][:7]
+            monthly.setdefault(m,{"received":0,"completed":0})
+            monthly[m]["completed"]+=1
+    overdue_open=sum(1 for s in open_sars if s.days_remaining<0)
+    return {
+        "total":len(sars),"completed":len(completed),"open":len(open_sars),
+        "overdue_open":overdue_open,
+        "on_time":on_time,
+        "on_time_pct":round(on_time/len(completed)*100) if completed else None,
+        "avg_days":round(sum(turnarounds)/len(turnarounds),1) if turnarounds else None,
+        "max_days":max(turnarounds) if turnarounds else None,
+        "paused_used":sum(1 for s in completed if s.total_paused_days>0),
+        "rows":sorted(rows,key=lambda r:r["completed"],reverse=True),
+        "monthly":sorted(monthly.items(),reverse=True),
+    }
+
+@app.route("/admin/ig-report")
+@require_admin
+def ig_report():
+    return render_template("admin/ig_report.html",stats=_ig_stats())
+
+@app.route("/admin/ig-report.csv")
+@require_admin
+def ig_report_csv():
+    import csv
+    stats=_ig_stats()
+    buf=io.StringIO(); w=csv.writer(buf)
+    w.writerow(["sar_id","subject","received","completed","calendar_days",
+                "paused_days","within_statutory_deadline","redactions_applied"])
+    for r in stats["rows"]:
+        w.writerow([r["id"],r["subject"],r["received"],r["completed"],
+                    r["days"],r["paused_days"],"yes" if r["on_time"] else "no",
+                    r["redactions"]])
+    _audit("ig_report_exported",detail=f"{len(stats['rows'])} completed SARs")
+    return Response(buf.getvalue(),mimetype="text/csv",
+                    headers={"Content-Disposition":"attachment; filename=ig_sar_report.csv"})
 
 @app.route("/healthz")
 def healthz():

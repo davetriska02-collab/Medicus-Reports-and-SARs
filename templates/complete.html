@@ -74,6 +74,22 @@
   </div>
 
   <div>
+    {% if current_user and current_user.role == 'admin' %}
+    <div class="section-head" style="margin-bottom:14px;">Response pack</div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:12px;color:var(--t3);">
+          Generate the disclosure cover letter (Article 15 response on the practice
+          letterhead) and a certificate of redaction. Both are added to the output
+          files and included in the ZIP download.
+        </div>
+        <textarea id="pack-custom" rows="2" placeholder="Optional extra paragraph for the cover letter…"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t1);padding:6px 8px;font-size:11px;outline:none;resize:vertical;"></textarea>
+        <button class="btn btn-primary" id="pack-btn" onclick="generatePack()">Generate response pack</button>
+        <span id="pack-status" style="font-size:11px;color:var(--green);display:none;"></span>
+      </div>
+    </div>
+    {% endif %}
     <div class="section-head" style="margin-bottom:14px;">Export &amp; transfer</div>
     <div class="card" style="margin-bottom:16px;">
       <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
@@ -135,30 +151,61 @@
 <script>
 const SAR_ID = "{{ sar.id }}";
 
-fetch('/api/sar/' + SAR_ID + '/outputs')
-  .then(r => r.json())
-  .then(data => {
-    document.getElementById('file-list-loading').style.display = 'none';
-    const list = document.getElementById('output-files');
-    list.classList.remove('hidden');
-    const allFiles = [...(data.redacted_files || []), ...(data.log_file ? [data.log_file] : [])];
-    if (!allFiles.length) {
-      list.innerHTML = '<div style="color:var(--t4);font-size:12px;padding:12px;">No output files found. Try re-finalising from the review screen.</div>';
-      return;
-    }
-    list.innerHTML = allFiles.map(fn => `
-      <div class="file-row">
-        <div><div class="file-row-name">${fn}</div><div class="file-row-meta">${fn.endsWith('_redacted.pdf') ? 'Redacted PDF' : 'Audit log'}</div></div>
-        <div style="display:flex;gap:6px;">
-          ${fn.endsWith('_redacted.pdf') ? `<button class="btn-sm" onclick="openPreview('${fn.replace(/'/g, "\\'")}')" title="Compare original and redacted pages side by side">⇄ Before/After</button>` : ''}
-          <a href="/api/sar/${SAR_ID}/download/${fn}" class="btn-sm" download>↓ Download</a>
-        </div>
-      </div>`).join('');
-    document.getElementById('download-all-btn').style.display = 'inline-flex';
+function fileLabel(fn) {
+  if (fn.endsWith('_redacted.pdf')) return 'Redacted PDF';
+  if (fn.startsWith('cover_letter_')) return 'Response pack · Cover letter';
+  if (fn.startsWith('certificate_of_redaction_')) return 'Response pack · Certificate of redaction';
+  return 'Audit log';
+}
+
+function loadOutputs() {
+  fetch('/api/sar/' + SAR_ID + '/outputs')
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('file-list-loading').style.display = 'none';
+      const list = document.getElementById('output-files');
+      list.classList.remove('hidden');
+      const allFiles = [...(data.redacted_files || []),
+                        ...(data.pack_files || []),
+                        ...(data.log_file ? [data.log_file] : [])];
+      if (!allFiles.length) {
+        list.innerHTML = '<div style="color:var(--t4);font-size:12px;padding:12px;">No output files found. Try re-finalising from the review screen.</div>';
+        return;
+      }
+      list.innerHTML = allFiles.map(fn => `
+        <div class="file-row">
+          <div><div class="file-row-name">${fn}</div><div class="file-row-meta">${fileLabel(fn)}</div></div>
+          <div style="display:flex;gap:6px;">
+            ${fn.endsWith('_redacted.pdf') ? `<button class="btn-sm" onclick="openPreview('${fn.replace(/'/g, "\\'")}')" title="Compare original and redacted pages side by side">⇄ Before/After</button>` : ''}
+            <a href="/api/sar/${SAR_ID}/download/${fn}" class="btn-sm" download>↓ Download</a>
+          </div>
+        </div>`).join('');
+      document.getElementById('download-all-btn').style.display = 'inline-flex';
+    })
+    .catch(() => {
+      document.getElementById('file-list-loading').textContent = 'Could not load output files.';
+    });
+}
+loadOutputs();
+
+function generatePack() {
+  const btn = document.getElementById('pack-btn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  fetch('/api/sar/' + SAR_ID + '/response-pack', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ custom_paragraph: document.getElementById('pack-custom').value })
   })
-  .catch(() => {
-    document.getElementById('file-list-loading').textContent = 'Could not load output files.';
-  });
+    .then(r => r.json().then(d => ({ ok: r.ok, d })))
+    .then(({ ok, d }) => {
+      if (!ok) throw new Error(d.error || 'Generation failed');
+      const st = document.getElementById('pack-status');
+      st.textContent = '✓ Cover letter and certificate added to output files';
+      st.style.display = 'inline';
+      loadOutputs();
+    })
+    .catch(e => alert(e.message))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Generate response pack'; });
+}
 
 function downloadAll() { window.location.href = '/api/sar/' + SAR_ID + '/download-all'; }
 

@@ -115,6 +115,7 @@ class SARRequest:
     allocated_to: str = ""           # User.id of allocated GP
     allocated_to_name: str = ""      # Denormalised display name
     last_modified: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    completed_at: str = ""           # ISO timestamp set at first finalise
 
     # Document date ordering: {filename: "YYYY-MM-DD" or None}
     document_dates: dict = field(default_factory=dict)

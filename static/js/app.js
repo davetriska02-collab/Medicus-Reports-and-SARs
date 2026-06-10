@@ -75,6 +75,9 @@ function submitSar() {
   fd.append('phone',        document.getElementById('phone').value.trim());
   fd.append('email',        document.getElementById('email').value.trim());
   fd.append('aliases',      JSON.stringify(getAliases()));
+  fd.append('request_date', document.getElementById('request_date')?.value || '');
+  fd.append('id_verified',  document.getElementById('id_verified')?.value.trim() || '');
+  fd.append('scope_notes',  document.getElementById('scope_notes')?.value.trim() || '');
   files.forEach(f => fd.append('pdf_files', f));
 
   document.getElementById('submit-btn').disabled = true;
@@ -134,6 +137,12 @@ function showSubmitError(msg) {
   showError('submit-error', msg);
   document.getElementById('job-step').textContent = 'Error: ' + msg;
   document.getElementById('job-step').style.color = 'var(--red)';
+}
+
+// Default request_date to today
+const _rdInput = document.getElementById('request_date');
+if (_rdInput && !_rdInput.value) {
+  _rdInput.value = new Date().toISOString().slice(0, 10);
 }
 
 // Auto-fill full_name from first+last

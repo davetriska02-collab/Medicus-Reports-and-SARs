@@ -83,6 +83,25 @@
   </div>
 </div>
 
+{% if current_user and current_user.role == 'admin' %}
+<div style="margin-top:20px;" id="workflow-settings">
+  <div class="card">
+    <div class="card-header"><span class="mono-label">Workflow Settings</span></div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
+      <label class="check-row" style="font-size:13px;color:var(--t2);">
+        <input type="checkbox" id="cfg-second-signoff" {% if practice.require_second_signoff == '1' %}checked{% endif %}>
+        Require a second sign-off before a SAR can be finalised
+      </label>
+      <div style="font-size:12px;color:var(--t4);">When enabled, a second reviewer (not the allocated GP) must sign off the SAR before an admin can finalise it.</div>
+      <div>
+        <button class="btn btn-primary" style="font-size:11px;height:30px;padding:0 14px;" onclick="saveWorkflowSettings()">Save workflow settings</button>
+        <span id="wf-saved" style="font-size:12px;color:var(--green);display:none;margin-left:8px;">Saved</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div style="margin-top:20px;">
   <div class="card">
     <div class="card-header"><span class="mono-label">GP Allocation Workflow</span></div>
@@ -121,6 +140,20 @@
 {% block extra_scripts %}
 <script>
 {% if current_user and current_user.role == 'admin' %}
+function saveWorkflowSettings() {
+  const val = document.getElementById('cfg-second-signoff').checked ? '1' : '0';
+  fetch('/api/practice-config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({require_second_signoff: val})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      const st = document.getElementById('wf-saved');
+      st.style.display = 'inline';
+      setTimeout(() => st.style.display = 'none', 3000);
+    }
+  });
+}
 function savePracticeConfig() {
   const data = {
     practice_name:    document.getElementById('cfg-practice-name').value,
@@ -130,6 +163,7 @@ function savePracticeConfig() {
     sar_officer_email:document.getElementById('cfg-officer-email').value,
     sar_officer_gmc:  document.getElementById('cfg-officer-gmc').value,
     footer_text:      document.getElementById('cfg-footer').value,
+    require_second_signoff: document.getElementById('cfg-second-signoff')?.checked ? '1' : '0',
   };
   if (!data.practice_name) {
     document.getElementById('cfg-error').textContent = 'Practice name is required.';

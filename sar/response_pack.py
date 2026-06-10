@@ -170,6 +170,101 @@ def generate_cover_letter(sar, cfg: dict, output_dir: str,
     return w.save(os.path.join(output_dir, f"cover_letter_{sar.id}.pdf"))
 
 
+def generate_acknowledgment(sar, cfg: dict, output_dir: str) -> str:
+    """Article 12 acknowledgment letter confirming receipt of the SAR."""
+    os.makedirs(output_dir, exist_ok=True)
+    w = _Writer()
+    subj = sar.subject
+    practice = cfg.get("practice_name", "")
+    officer = cfg.get("sar_officer_name", "")
+    officer_role = cfg.get("sar_officer_role", "Data Protection Lead")
+    officer_email = cfg.get("sar_officer_email", "")
+
+    # Letterhead (matches generate_cover_letter exactly)
+    w.line(practice, size=15, bold=True)
+    for addr_line in (cfg.get("practice_address") or "").splitlines():
+        if addr_line.strip():
+            w.line(addr_line.strip(), size=9, colour=(0.35, 0.35, 0.35))
+    w.gap(14)
+    w.line(date.today().strftime("%d %B %Y"))
+    w.gap(10)
+
+    w.line("PRIVATE & CONFIDENTIAL", size=10, bold=True)
+    w.line(subj.full_name or f"{subj.first_name} {subj.last_name}".strip())
+    for addr_line in (subj.address or "").splitlines():
+        if addr_line.strip():
+            w.line(addr_line.strip())
+    w.gap(14)
+
+    w.line(f"Dear {subj.full_name or 'Sir/Madam'},")
+    w.gap(6)
+    ref_bits = [f"Subject Access Request — {subj.full_name}"]
+    if subj.date_of_birth:
+        ref_bits.append(f"DOB {subj.date_of_birth}")
+    if subj.nhs_number:
+        ref_bits.append(f"NHS No. {subj.nhs_number}")
+    w.wrapped("Re: " + " · ".join(ref_bits), bold=True)
+    w.gap(8)
+
+    # Determine receipt date and due date
+    receipt_iso = (getattr(sar, "request_date", "") or "").strip() or sar.created_at
+    receipt_display = _fmt_date(receipt_iso)
+    # Due date from model (already accounts for request_date)
+    due_display = _fmt_date(sar.due_date) if sar.due_date else "within one calendar month"
+
+    w.wrapped(
+        f"We are writing to confirm that {practice} has received your subject "
+        f"access request on {receipt_display}. Your request is being processed "
+        "in accordance with Article 15 of the UK General Data Protection "
+        "Regulation and the Data Protection Act 2018.")
+    w.gap(8)
+
+    w.wrapped(
+        f"We will respond to your request within one calendar month of the date "
+        f"of receipt. The deadline for our response is {due_display}.")
+    w.gap(8)
+
+    w.wrapped(
+        "Please note that in cases of complexity or where a large volume of "
+        "information is involved, we may extend this period by up to a further "
+        "two months. If we need to do so, we will notify you within one calendar "
+        "month of your request, explaining the reasons for the extension.")
+    w.gap(8)
+
+    id_verified = (getattr(sar, "id_verified", "") or "").strip()
+    if id_verified:
+        w.wrapped(
+            f"Your identity has been verified ({id_verified}). "
+            "No further identification documents are required at this time.")
+        w.gap(8)
+    else:
+        w.wrapped(
+            "If we have not already verified your identity, we may contact you "
+            "to request suitable identification documents before we are able to "
+            "release personal data.")
+        w.gap(8)
+
+    contact = officer or practice
+    contact_suffix = f" at {officer_email}" if officer_email else ""
+    w.wrapped(
+        f"If you have any questions about your request, please contact "
+        f"{contact}{contact_suffix}. You also have the right to complain to the "
+        "Information Commissioner's Office (ico.org.uk, 0303 123 1113).")
+    w.gap(16)
+
+    w.line("Yours sincerely,")
+    w.gap(20)
+    if officer:
+        w.line(officer, bold=True)
+        w.line(officer_role, size=9, colour=(0.35, 0.35, 0.35))
+    w.line(practice, size=9, colour=(0.35, 0.35, 0.35))
+    if cfg.get("footer_text"):
+        w.gap(14)
+        w.line(cfg["footer_text"], size=8, colour=(0.5, 0.5, 0.5))
+
+    return w.save(os.path.join(output_dir, f"acknowledgment_{sar.id}.pdf"))
+
+
 def generate_certificate(sar, cfg: dict, output_dir: str,
                          page_counts: dict | None = None) -> str:
     """Certificate of redaction with category and exemption breakdowns.

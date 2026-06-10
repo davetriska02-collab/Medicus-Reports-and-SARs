@@ -49,7 +49,7 @@ from sar.report_templates import (get_all_templates, get_template, save_custom_t
                                     delete_custom_template)
 from sar.report_store import save_report, load_report, load_all_reports, delete_report
 from sar.evidence_extractor import extract_evidence
-from sar.response_pack import generate_cover_letter, generate_certificate
+from sar.response_pack import generate_cover_letter, generate_certificate, generate_acknowledgment
 from sar.print_bundle import build_print_bundle
 from sar.report_generator import generate_report_pdf
 
@@ -180,6 +180,12 @@ def _to_dict(sar):
         "unscreened_pages": getattr(sar,"unscreened_pages",[]),
         "due_date": sar.due_date, "notes": sar.notes, "workflow_status": sar.workflow_status,
         "completed_at": getattr(sar, "completed_at", ""),
+        "request_date": getattr(sar, "request_date", ""),
+        "id_verified": getattr(sar, "id_verified", ""),
+        "scope_notes": getattr(sar, "scope_notes", ""),
+        "signoff_by": getattr(sar, "signoff_by", ""),
+        "signoff_by_name": getattr(sar, "signoff_by_name", ""),
+        "signoff_at": getattr(sar, "signoff_at", ""),
         "allocated_to": sar.allocated_to, "allocated_to_name": sar.allocated_to_name,
         "clock_paused": sar.clock_paused, "paused_at": sar.paused_at,
         "total_paused_days": sar.total_paused_days, "pause_log": sar.pause_log,
@@ -238,6 +244,12 @@ def _sar_from_dict(data):
         total_paused_days=data.get("total_paused_days",0),
         pause_log=data.get("pause_log",[]),
         completed_at=data.get("completed_at",""),
+        request_date=data.get("request_date",""),
+        id_verified=data.get("id_verified",""),
+        scope_notes=data.get("scope_notes",""),
+        signoff_by=data.get("signoff_by",""),
+        signoff_by_name=data.get("signoff_by_name",""),
+        signoff_at=data.get("signoff_at",""),
     )
     sar.archived = data.get("archived", False)
     sar.redaction_failures = data.get("redaction_failures", [])
@@ -706,13 +718,29 @@ def dashboard():
                           "file_count":len(sar.pdf_files),"total_candidates":total,
                           "reviewed":reviewed,"days_remaining":sar.days_remaining})
     all_active=[s for s in _all() if not getattr(s,"archived",False)]
+    # Urgency strip — non-archived, non-complete, clock not paused
+    urgent_sars=[]
+    for s in all_active:
+        if s.status=="complete" or s.clock_paused: continue
+        dr=s.days_remaining
+        if dr<=7:
+            name=s.subject.full_name or f"{s.subject.first_name} {s.subject.last_name}".strip()
+            urgent_sars.append({"id":s.id,"name":name,"due_date":s.due_date,"days_remaining":dr})
+    urgent_sars.sort(key=lambda x:x["days_remaining"])
+    overdue_count_strip=sum(1 for x in urgent_sars if x["days_remaining"]<0)
+    due3_count=sum(1 for x in urgent_sars if 0<=x["days_remaining"]<=3)
+    due7_count=sum(1 for x in urgent_sars if 3<x["days_remaining"]<=7)
     return render_template("dashboard.html",sar_summaries=summaries,gp_users=get_gp_users(),update=_get_update_result(),practice_unconfigured=_practice_is_default(),
         total_requests=len(all_active),
         reviewing_count=sum(1 for s in all_active if s.status=="reviewing"),
         complete_count=sum(1 for s in all_active if s.status=="complete"),
         overdue_count=sum(1 for s in all_active if s.days_remaining<0 and s.status!="complete"),
         archived_count=sum(1 for s in _all() if getattr(s,"archived",False)),
-        show_archived=show_archived)
+        show_archived=show_archived,
+        urgent_sars=urgent_sars[:5],
+        overdue_count_strip=overdue_count_strip,
+        due3_count=due3_count,
+        due7_count=due7_count)
 @app.route("/new")
 @require_login
 def new_sar_page(): return render_template("index.html")
@@ -730,8 +758,10 @@ def review(sid):
     dm={x["name"]:x for x in fid}
     fif=[dm[bn] for bn in fon if bn in dm]
     mr=sar.main_record_file or (fon[0] if fon else "")
+    cfg=_get_practice_config()
     return render_template("review.html",sar=sar,files_info=fid,files_info_date=fid,
-                           files_info_file=fif,main_record_file=mr,gp_users=get_gp_users())
+                           files_info_file=fif,main_record_file=mr,gp_users=get_gp_users(),
+                           require_second_signoff=cfg.get("require_second_signoff","0")=="1")
 @app.route("/complete/<sid>")
 @require_login
 def complete(sid):
@@ -779,7 +809,12 @@ def create_sar():
     if not subj.full_name: return jsonify({"error":"Subject full name is required"}),400
     files=request.files.getlist("pdf_files")
     if not files or all(f.filename=="" for f in files): return jsonify({"error":"At least one file is required"}),400
-    sar=SARRequest(subject=subj); sar.archived=False; sar.compute_due_date()
+    sar=SARRequest(subject=subj)
+    sar.archived=False
+    sar.request_date=request.form.get("request_date","").strip()
+    sar.id_verified=request.form.get("id_verified","").strip()
+    sar.scope_notes=request.form.get("scope_notes","").strip()
+    sar.compute_due_date()
     sd=_sar_dir(sar.id); os.makedirs(sd,exist_ok=True)
     saved=[]
     for f in files:
@@ -984,11 +1019,53 @@ def resume_clock(sid):
                           "reason":(request.json or {}).get("reason",""),"days":pd})
     sar.clock_paused=False; sar.paused_at=""
     _save(sar); return jsonify({"ok":True,"paused_days":pd,"total_paused_days":sar.total_paused_days})
+@app.route("/api/sar/<sid>/acknowledgment",methods=["POST"])
+@require_login
+def generate_acknowledgment_letter(sid):
+    sar=_get(sid)
+    if not sar: return jsonify({"error":"Not found"}),404
+    od=os.path.join(OUTPUT_DIR,sid); os.makedirs(od,exist_ok=True)
+    cfg=_get_practice_config()
+    try:
+        path=generate_acknowledgment(sar,cfg,od)
+    except Exception as e:
+        log.exception("Acknowledgment generation failed for SAR %s",sid)
+        return jsonify({"error":f"Acknowledgment generation failed: {e}"}),500
+    _audit("acknowledgment_generated",target=sid,detail=sar.subject.full_name)
+    return jsonify({"ok":True,"file":os.path.basename(path)})
+@app.route("/api/sar/<sid>/signoff",methods=["POST"])
+@require_login
+def signoff_sar(sid):
+    sar=_get(sid)
+    if not sar: return jsonify({"error":"Not found"}),404
+    cfg=_get_practice_config()
+    if cfg.get("require_second_signoff","0")!="1":
+        return jsonify({"error":"Second sign-off is not enabled"}),400
+    if sar.allocated_to and g.current_user.id==sar.allocated_to:
+        return jsonify({"error":"The second check must be done by someone other than the allocated reviewer"}),403
+    sar.signoff_by=g.current_user.id
+    sar.signoff_by_name=g.current_user.display_name
+    sar.signoff_at=datetime.now(timezone.utc).isoformat()
+    _save(sar)
+    _audit("sar_signed_off",target=sid,detail=g.current_user.display_name)
+    return jsonify({"ok":True})
+@app.route("/api/sar/<sid>/signoff/clear",methods=["POST"])
+@require_admin
+def clear_signoff(sid):
+    sar=_get(sid)
+    if not sar: return jsonify({"error":"Not found"}),404
+    sar.signoff_by=""; sar.signoff_by_name=""; sar.signoff_at=""
+    _save(sar)
+    _audit("sar_signoff_cleared",target=sid)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/finalise",methods=["POST"])
 @require_admin
 def finalise_sar(sid):
     sar=_get(sid)
     if not sar: return jsonify({"error":"Not found"}),404
+    cfg=_get_practice_config()
+    if cfg.get("require_second_signoff","0")=="1" and not getattr(sar,"signoff_by",""):
+        return jsonify({"error":"Second sign-off required before finalising — ask a colleague to review and sign off"}),403
     od=os.path.join(OUTPUT_DIR,sid); os.makedirs(od,exist_ok=True)
     try:
         rf=[]; failed=[]
@@ -1023,7 +1100,7 @@ def list_outputs(sid):
     fs=os.listdir(od)
     return jsonify({"redacted_files":[f for f in fs if f.endswith("_redacted.pdf")],
                     "log_file":next((f for f in fs if f.startswith("redaction_log_")),None),
-                    "pack_files":[f for f in fs if f.startswith(("cover_letter_","certificate_of_redaction_"))],
+                    "pack_files":[f for f in fs if f.startswith(("cover_letter_","certificate_of_redaction_","acknowledgment_"))],
                     "bundle_files":sorted(f for f in fs if f.startswith("print_bundle_"))})
 @app.route("/api/sar/<sid>/response-pack",methods=["POST"])
 @require_admin

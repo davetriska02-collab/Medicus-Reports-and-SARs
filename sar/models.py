@@ -135,10 +135,21 @@ class SARRequest:
     total_paused_days: int = 0       # Accumulated paused days from previous pauses
     pause_log: list = field(default_factory=list)  # [{paused_at, resumed_at, reason, days}]
 
+    # Intake fields (Batch C)
+    request_date: str = ""           # ISO date request was received (statutory clock start)
+    id_verified: str = ""            # Free-text verification method, empty = not verified
+    scope_notes: str = ""            # Optional scope / clarification notes
+
+    # Two-person sign-off fields (Batch C)
+    signoff_by: str = ""             # User.id of second reviewer
+    signoff_by_name: str = ""        # Denormalised display name
+    signoff_at: str = ""             # ISO timestamp of sign-off
+
     def compute_due_date(self) -> None:
-        """Set due_date to 30 calendar days from created_at."""
+        """Set due_date to 30 calendar days from request_date (if set) or created_at."""
+        base = self.request_date or self.created_at
         try:
-            dt = datetime.fromisoformat(self.created_at)
+            dt = datetime.fromisoformat(base)
         except (ValueError, TypeError):
             dt = datetime.now(timezone.utc)
         self.due_date = (dt + timedelta(days=30)).strftime("%Y-%m-%d")

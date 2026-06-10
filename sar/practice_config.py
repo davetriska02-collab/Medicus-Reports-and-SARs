@@ -21,6 +21,8 @@ DEFAULTS = {
     "backup_dir":       "",
     # Minutes of inactivity before a session is signed out (0 = disabled)
     "idle_timeout_minutes": "30",
+    # Two-person sign-off: "1" = require a second reviewer before finalising
+    "require_second_signoff": "0",
 }
 
 

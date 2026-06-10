@@ -78,6 +78,25 @@
     </div>
 
     <div class="form-card">
+      <div class="form-card-title">Intake Details</div>
+      <div class="form-card-hint">Optional fields for statutory tracking and acknowledgment letter.</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Date request received</label>
+          <input type="date" id="request_date" name="request_date">
+        </div>
+        <div class="form-group">
+          <label>ID verification method</label>
+          <input type="text" id="id_verified" name="id_verified" placeholder="e.g. Passport seen 10/06/2026">
+        </div>
+        <div class="form-group form-group-wide">
+          <label>Scope / clarification notes</label>
+          <textarea id="scope_notes" name="scope_notes" rows="2" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);color:var(--t1);padding:8px 10px;font-size:13px;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
       <div class="form-card-title">Detection Settings</div>
       <div class="form-card-hint">Adjust thresholds for automatic vs flagged redactions.</div>
       <div class="threshold-row">

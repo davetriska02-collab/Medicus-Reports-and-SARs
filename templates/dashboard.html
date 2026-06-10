@@ -40,6 +40,35 @@
 </div>
 {% endif %}
 
+{% if not show_archived and (overdue_count_strip + due3_count) > 0 %}
+<div id="urgency-strip" style="background:rgba(255,80,80,0.07);border:1px solid rgba(255,80,80,0.25);border-radius:var(--r-lg);padding:10px 16px;margin-bottom:16px;">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+    {% if overdue_count_strip > 0 %}
+    <span style="background:#c0392b;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">{{ overdue_count_strip }} overdue</span>
+    {% endif %}
+    {% if due3_count > 0 %}
+    <span style="background:#e67e22;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">{{ due3_count }} due ≤3 days</span>
+    {% endif %}
+    {% if due7_count > 0 %}
+    <span style="background:var(--border);color:var(--t2);border-radius:12px;padding:2px 10px;font-size:11px;font-weight:500;">{{ due7_count }} due ≤7 days</span>
+    {% endif %}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    {% for u in urgent_sars %}
+    <div style="font-size:12px;">
+      <a href="/review/{{ u.id }}" style="color:var(--t1);text-decoration:none;font-weight:500;">{{ u.name }}</a>
+      <span style="color:var(--t4);margin-left:6px;">—</span>
+      {% if u.days_remaining < 0 %}
+      <span style="color:#c0392b;margin-left:6px;">overdue by {{ u.days_remaining|abs }} day{{ 's' if u.days_remaining|abs != 1 }}</span>
+      {% else %}
+      <span style="color:{% if u.days_remaining <= 3 %}#e67e22{% else %}var(--t3){% endif %};margin-left:6px;">due {{ u.due_date|fdate }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if not show_archived %}
 <div class="stat-grid">
   <div class="stat-card">

@@ -29,7 +29,10 @@
       <span class="nav-username">{{ current_user.display_name }}</span>
       <span class="nav-role-badge nav-role-{{ current_user.role }}">{{ current_user.role }}</span>
       <a href="/account">Account</a>
-      <a href="/logout">Sign out</a>
+      <form method="POST" action="/logout" style="display:inline;margin:0;">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" style="background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer;">Sign out</button>
+      </form>
     </div>
     {% endif %}
   </nav>

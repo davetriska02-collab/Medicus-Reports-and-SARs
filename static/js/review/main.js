@@ -287,7 +287,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     finaliseBtn.disabled = true;
     finaliseBtn.textContent = 'Finalising…';
     try {
-      await api.finalise(sarId);
+      const result = await api.finalise(sarId);
+      const failed = result?.failed_redactions || [];
+      if (failed.length) {
+        alert(`WARNING: ${failed.length} approved redaction(s) could not be placed on the page and REMAIN VISIBLE in the output.\n\nThey are listed on the next screen and in the audit log — redact them manually before disclosure.`);
+      }
       window.location.href = '/complete/' + sarId;
     } catch (e) {
       alert('Finalise failed: ' + e.message);

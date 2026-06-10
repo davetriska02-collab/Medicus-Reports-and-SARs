@@ -137,22 +137,22 @@ echo  ------------------------------------------------
 echo.
 
 echo  [1/4] Installing Flask (web framework)...
-"%PYEXE%" -m pip install flask --quiet --no-warn-script-location
+"%PYEXE%" -m pip install flask==3.1.2 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: Flask install failed. & pause & exit /b 1 )
 echo  [1/4] Done.
 
 echo  [2/4] Installing Waitress (server)...
-"%PYEXE%" -m pip install waitress --quiet --no-warn-script-location
+"%PYEXE%" -m pip install waitress==3.0.2 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: Waitress install failed. & pause & exit /b 1 )
 echo  [2/4] Done.
 
 echo  [3/4] Installing striprtf (RTF support)...
-"%PYEXE%" -m pip install striprtf --quiet --no-warn-script-location
+"%PYEXE%" -m pip install striprtf==0.0.29 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: striprtf install failed. & pause & exit /b 1 )
 echo  [3/4] Done.
 
 echo  [4/4] Installing PyMuPDF (PDF engine -- largest, ~2-5 min)...
-"%PYEXE%" -m pip install pymupdf --quiet --no-warn-script-location
+"%PYEXE%" -m pip install pymupdf==1.26.4 --quiet --no-warn-script-location
 if errorlevel 1 ( echo  ERROR: PyMuPDF install failed. & pause & exit /b 1 )
 echo  [4/4] Done.
 

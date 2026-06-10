@@ -59,6 +59,7 @@ All data is stored locally in the `data/` subfolder. Nothing is transmitted exte
 
 | Version | Notes |
 |---------|-------|
+| 2.1 | Redaction-failure reporting (audit log never overstates) · atomic writes · per-SAR locks · login rate limiting · CSRF on all forms · POST-only logout · upload/zip size caps · originals preserved on page delete · 9 new report templates (PIP, DVLA, firearms, adoption, occupational health, travel insurance, mental capacity, Group 2 driver, housing) · pinned dependencies · rotating file logging · pytest suite |
 | 2.0 | Medicus Suite rebrand · thread-safe store · relative path storage · archive/redetect endpoints · ES module JS split |
 | 1.0 | Initial release |
 

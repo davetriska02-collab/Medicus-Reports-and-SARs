@@ -1,5 +1,6 @@
 import json
 import os
+from sar.fsutil import atomic_write_json
 
 _DATA_PATH = str(__import__("pathlib").Path(__file__).resolve().parent.parent / "data" / "custom_words.json")
 
@@ -12,9 +13,7 @@ def _load() -> list[dict]:
 
 
 def _save(words: list[dict]) -> None:
-    os.makedirs(os.path.dirname(_DATA_PATH), exist_ok=True)
-    with open(_DATA_PATH, "w", encoding="utf-8") as f:
-        json.dump(words, f, indent=2)
+    atomic_write_json(_DATA_PATH, words)
 
 
 def get_custom_words() -> list[dict]:

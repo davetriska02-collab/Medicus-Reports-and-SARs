@@ -4,6 +4,7 @@ Stored in data/practice.json. Editable from the Settings page by admins.
 """
 import json
 import os
+from sar.fsutil import atomic_write_json
 
 _CONFIG_PATH = str(__import__('pathlib').Path(__file__).resolve().parent.parent / 'data' / 'practice.json')
 
@@ -37,10 +38,7 @@ def save_config(data: dict) -> None:
     for key in DEFAULTS:
         if key in data:
             current[key] = str(data[key]).strip()
-    path = os.path.abspath(_CONFIG_PATH)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w') as f:
-        json.dump(current, f, indent=2)
+    atomic_write_json(os.path.abspath(_CONFIG_PATH), current)
 
 
 def is_default() -> bool:

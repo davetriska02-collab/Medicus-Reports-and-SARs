@@ -40,13 +40,19 @@ def apply_redactions(
     pdf_path: str,
     candidates: list[RedactionCandidate],
     output_dir: str,
-) -> str:
+) -> tuple[str, list[RedactionCandidate]]:
     """
     Apply confirmed redactions to a PDF and save the result.
-    Returns the path to the redacted PDF.
+    Returns (path to the redacted PDF, candidates that could NOT be placed).
+
+    A candidate fails when it has no usable coordinates AND a text search on
+    its page finds no occurrence. Silently skipping these would disclose PII
+    while the audit log claims it was redacted, so failures are always
+    reported to the caller.
     """
     doc = fitz.open(pdf_path)
     basename = os.path.basename(pdf_path)
+    failed: list[RedactionCandidate] = []
 
     # Filter to only candidates that should be redacted for this file
     to_redact = [
@@ -62,13 +68,15 @@ def apply_redactions(
 
     for page_num, page_candidates in by_page.items():
         if page_num >= len(doc):
+            # Page no longer exists — these can never be applied
+            failed.extend(page_candidates)
             continue
         page = doc[page_num]
 
         for c in page_candidates:
-            if c.x0 > 0 and c.y0 > 0 and c.x1 > 0 and c.y1 > 0:
+            rect = fitz.Rect(c.x0, c.y0, c.x1, c.y1)
+            if c.x0 > 0 and c.y0 > 0 and c.x1 > 0 and c.y1 > 0 and not rect.is_empty:
                 # We have coordinates from span mapping
-                rect = fitz.Rect(c.x0, c.y0, c.x1, c.y1)
                 page.add_redact_annot(
                     rect,
                     text="[REDACTED]",
@@ -78,7 +86,10 @@ def apply_redactions(
                 )
             else:
                 # Fallback: search for the text on the page
-                instances = page.search_for(c.text)
+                instances = page.search_for(c.text) if c.text.strip() else []
+                if not instances:
+                    failed.append(c)
+                    continue
                 for inst in instances:
                     page.add_redact_annot(
                         inst,
@@ -106,4 +117,4 @@ def apply_redactions(
     doc.save(output_path, garbage=4, deflate=True)
     doc.close()
 
-    return output_path
+    return output_path, failed

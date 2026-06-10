@@ -21,15 +21,22 @@ def generate_redaction_log(
     candidates: list[RedactionCandidate],
     output_dir: str,
     sar_id: str,
+    failed_ids: set[str] | None = None,
 ) -> str:
     """
     Generate a PDF redaction log listing all redaction decisions.
+    failed_ids: candidate ids approved for redaction that could NOT be placed
+    on the page — these are reported separately so the log never claims a
+    redaction was applied when it was not.
     Returns path to the log PDF.
     """
     doc = fitz.open()
+    failed_ids = failed_ids or set()
 
-    redacted = [c for c in candidates if c.status in
+    approved = [c for c in candidates if c.status in
                 (RedactionStatus.AUTO_REDACT, RedactionStatus.APPROVED)]
+    redacted = [c for c in approved if c.id not in failed_ids]
+    failed = [c for c in approved if c.id in failed_ids]
     excluded_subject = [c for c in candidates
                         if c.status == RedactionStatus.EXCLUDED_SUBJECT]
     excluded_staff = [c for c in candidates
@@ -48,6 +55,7 @@ def generate_redaction_log(
         "-" * 50,
         f"Total detections: {len(candidates)}",
         f"Redactions applied: {len(redacted)}",
+        f"REDACTION FAILURES (approved but NOT applied): {len(failed)}",
         f"Excluded (data subject): {len(excluded_subject)}",
         f"Excluded (staff): {len(excluded_staff)}",
         f"Rejected by reviewer: {len(rejected)}",
@@ -76,6 +84,27 @@ def generate_redaction_log(
         if c.risk_flags:
             flags_str = ", ".join(f"{f['category']}: {f['phrase']}" for f in c.risk_flags)
             lines.append(f"   Risk flags: {flags_str}")
+
+    if failed:
+        lines.extend([
+            "",
+            "=" * 60,
+            "!!! REDACTION FAILURES — APPROVED BUT NOT APPLIED !!!",
+            "=" * 60,
+            "",
+            "The following items were approved for redaction but could not be",
+            "located on the page. They REMAIN VISIBLE in the output documents",
+            "and MUST be redacted manually before disclosure.",
+        ])
+        for i, c in enumerate(failed, 1):
+            lines.extend([
+                "",
+                f"{i}. [{c.category.value.upper()}]",
+                f"   Text: \"{c.text}\"",
+                f"   File: {c.source_file}",
+                f"   Page: {c.page_num + 1}",
+                f"   Reason for detection: {c.reason}",
+            ])
 
     if rejected:
         lines.extend([
@@ -131,6 +160,7 @@ def generate_redaction_log(
             line_text.startswith("SUBJECT ACCESS")
             or line_text.startswith("SUMMARY")
             or line_text.startswith("REDACTIONS APPLIED")
+            or line_text.startswith("!!! REDACTION FAILURES")
             or line_text.startswith("REJECTED")
             or line_text.startswith("UNREVIEWED")
         )

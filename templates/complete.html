@@ -5,6 +5,26 @@
   <a href="/" class="page-header-back">← Dashboard</a>
 </div>
 
+{% set failures = sar.redaction_failures if sar.redaction_failures is defined else [] %}
+{% if failures %}
+<div style="background:#3a1414;border:1px solid #a33;border-radius:8px;padding:14px 18px;margin-bottom:18px;">
+  <div style="font-weight:600;color:#ff8a8a;font-size:13px;margin-bottom:6px;">
+    ⚠ {{ failures|length }} approved redaction{{ 's' if failures|length != 1 }} could NOT be applied
+  </div>
+  <div style="font-size:12px;color:#e8b4b4;margin-bottom:8px;">
+    These items remain visible in the output PDFs and must be redacted manually
+    (use draw mode on the review screen) before disclosure. They are listed in the audit log.
+  </div>
+  <ul style="font-size:12px;color:#e8b4b4;margin:0 0 8px 16px;padding:0;">
+    {% for f in failures[:10] %}
+    <li>"{{ f.text }}" — {{ f.source_file }}, page {{ f.page_num + 1 }}</li>
+    {% endfor %}
+    {% if failures|length > 10 %}<li>… and {{ failures|length - 10 }} more (see audit log)</li>{% endif %}
+  </ul>
+  <a href="/review/{{ sar.id }}" class="btn btn-danger btn-sm">Return to review</a>
+</div>
+{% endif %}
+
 <div class="complete-hero">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;">
     <div>

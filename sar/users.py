@@ -4,23 +4,55 @@ Follows the same JSON-file pattern as staff_list.py and custom_words.py.
 """
 import json
 import os
+import threading
 from werkzeug.security import generate_password_hash, check_password_hash
 from sar.models import User
+from sar.fsutil import atomic_write_json
 
 USERS_PATH = str(__import__("pathlib").Path(__file__).resolve().parent.parent / "data" / "users.json")
 
 
+class UsersFileCorrupt(Exception):
+    """data/users.json exists but cannot be parsed.
+
+    Deliberately distinct from "no users yet": a corrupt file must lock the
+    app down, NOT redirect to /setup where anyone could create a new admin.
+    """
+
+
+# mtime-validated cache — load_user runs on every request (including every
+# page-image fetch), so re-reading the file each time is needless I/O.
+_cache_lock = threading.Lock()
+_cache: list[dict] | None = None
+_cache_mtime: float | None = None
+
+
 def _load_users() -> list[dict]:
-    if not os.path.exists(USERS_PATH):
-        return []
-    with open(USERS_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    global _cache, _cache_mtime
+    with _cache_lock:
+        try:
+            mtime = os.path.getmtime(USERS_PATH)
+        except OSError:
+            _cache, _cache_mtime = None, None
+            return []
+        if _cache is not None and _cache_mtime == mtime:
+            return _cache
+        try:
+            with open(USERS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                raise ValueError("users.json root must be a list")
+        except (ValueError, OSError) as e:
+            raise UsersFileCorrupt(f"Cannot read {USERS_PATH}: {e}") from e
+        _cache, _cache_mtime = data, mtime
+        return data
 
 
 def _save_users(users: list[dict]) -> None:
-    os.makedirs(os.path.dirname(USERS_PATH), exist_ok=True)
-    with open(USERS_PATH, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
+    global _cache, _cache_mtime
+    atomic_write_json(USERS_PATH, users)
+    with _cache_lock:
+        _cache, _cache_mtime = None, None  # force re-read next access
 
 
 def _user_from_dict(d: dict) -> User:

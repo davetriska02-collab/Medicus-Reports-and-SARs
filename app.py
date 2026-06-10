@@ -1,4 +1,5 @@
-import io, os, re, json, shutil, zipfile, threading
+import io, os, re, json, shutil, time, zipfile, threading, logging
+from logging.handlers import RotatingFileHandler
 from queue import Queue, Empty
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -7,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.0.5"
+APP_VERSION = "2.1.0"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -27,7 +28,8 @@ from sar.date_extractor import extract_document_date, extract_date_from_filename
 from sar.keyword_scanner import scan_keywords
 from sar.users import (get_user_by_id, authenticate, create_user, get_all_users,
                         get_gp_users, set_password, delete_user, users_file_exists,
-                        get_user_by_username)
+                        get_user_by_username, UsersFileCorrupt)
+from sar.fsutil import atomic_write_json, unique_path
 from sar.report_templates import (get_all_templates, get_template, save_custom_template,
                                     delete_custom_template)
 from sar.report_store import save_report, load_report, load_all_reports, delete_report
@@ -62,7 +64,17 @@ app.config.update(
     SESSION_COOKIE_SECURE    = False,   # Set True when deploying with HTTPS
     SESSION_COOKIE_NAME      = 'sar_session',
     PERMANENT_SESSION_LIFETIME = 28800, # 8 hours
+    MAX_CONTENT_LENGTH       = 1024 * 1024 * 1024,  # 1 GB request cap
 )
+
+# ── Logging ────────────────────────────────────────────────────────────────
+_LOG_DIR = BASE_DIR / "data" / "logs"
+os.makedirs(str(_LOG_DIR), exist_ok=True)
+_log_handler = RotatingFileHandler(str(_LOG_DIR / "sar-redact.log"),
+                                   maxBytes=2_000_000, backupCount=5, encoding="utf-8")
+_log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler, logging.StreamHandler()])
+log = logging.getLogger("sar")
 
 @app.template_filter('fdate')
 def format_date(value):
@@ -121,15 +133,25 @@ def _get(sid):
 def _set(sid, sar):
     with _ar_lock: active_requests[sid] = sar
 def _del(sid):
-    with _ar_lock: active_requests.pop(sid, None)
+    with _ar_lock:
+        active_requests.pop(sid, None)
+        _sar_locks.pop(sid, None)
 def _all():
     with _ar_lock: return list(active_requests.values())
+
+# Per-SAR locks: serialise mutate-and-save so two concurrent reviewers can't
+# interleave a half-mutated snapshot into the JSON file.
+_sar_locks: dict[str, threading.Lock] = {}
+def _lock_for(sid) -> threading.Lock:
+    with _ar_lock:
+        return _sar_locks.setdefault(sid, threading.Lock())
 
 # Serialise
 def _to_dict(sar):
     return {
         "id": sar.id, "created_at": sar.created_at, "last_modified": sar.last_modified,
         "status": sar.status, "archived": getattr(sar,"archived",False),
+        "redaction_failures": getattr(sar,"redaction_failures",[]),
         "due_date": sar.due_date, "notes": sar.notes, "workflow_status": sar.workflow_status,
         "allocated_to": sar.allocated_to, "allocated_to_name": sar.allocated_to_name,
         "clock_paused": sar.clock_paused, "paused_at": sar.paused_at,
@@ -156,9 +178,9 @@ def _to_dict(sar):
     }
 
 def _save(sar):
-    sar.last_modified = datetime.now(timezone.utc).isoformat()
-    with open(os.path.join(SAR_DATA_DIR, f"{sar.id}.json"), "w") as f:
-        json.dump(_to_dict(sar), f, indent=2)
+    with _lock_for(sar.id):
+        sar.last_modified = datetime.now(timezone.utc).isoformat()
+        atomic_write_json(os.path.join(SAR_DATA_DIR, f"{sar.id}.json"), _to_dict(sar))
 
 def _load_all():
     for fname in os.listdir(SAR_DATA_DIR):
@@ -192,6 +214,7 @@ def _load_all():
                 pause_log=data.get("pause_log",[]),
             )
             sar.archived = data.get("archived", False)
+            sar.redaction_failures = data.get("redaction_failures", [])
             ds = data.get("detection_settings")
             if ds:
                 sar.detection_settings = DetectionSettings(
@@ -202,7 +225,8 @@ def _load_all():
             for c in cands:
                 if not c.risk_flags and c.text: c.risk_flags = check_text_for_risk(c.text)
             active_requests[sid] = sar
-        except Exception as e: print(f"Warning: could not load {fname}: {e}")
+        except Exception:
+            logging.getLogger("sar").warning("Could not load %s", fname, exc_info=True)
 
 
 def _migrate_absolute_paths():
@@ -221,8 +245,7 @@ def _migrate_absolute_paths():
             cleaned = [os.path.basename(p) for p in original]
             if cleaned != original:
                 data["pdf_files"] = cleaned
-                with open(path, "w") as f:
-                    json.dump(data, f, indent=2)
+                atomic_write_json(path, data)
                 migrated += 1
         except Exception:
             pass
@@ -283,30 +306,52 @@ def _convert_single(filepath, ext):
     if ext=="pdf": return filepath
     fn=m.get(ext)
     return fn(filepath) if fn else filepath
+# Zip extraction safety caps — one hostile/corrupt upload must not be able to
+# fill the disk of a shared server.
+ZIP_MAX_ENTRIES = 2000
+ZIP_MAX_TOTAL_BYTES = 4 * 1024 * 1024 * 1024   # 4 GB uncompressed across the archive
+ZIP_MAX_ENTRY_BYTES = 800 * 1024 * 1024        # 800 MB per file
 def _extract_zip(zip_path, sar_dir, emit_fn=None):
     result=[]
+    total=0
     with zipfile.ZipFile(zip_path,"r") as zf:
-        entries=[e for e in zf.namelist()
-                 if not e.endswith("/") and "." in e.split("/")[-1]
-                 and e.split(".")[-1].lower() in ALLOWED_EXTENSIONS]
-        for i,entry in enumerate(entries):
+        entries=[e for e in zf.infolist()
+                 if not e.filename.endswith("/") and "." in e.filename.split("/")[-1]
+                 and e.filename.split(".")[-1].lower() in ALLOWED_EXTENSIONS]
+        if len(entries) > ZIP_MAX_ENTRIES:
+            raise ValueError(f"Zip contains too many files ({len(entries)} > {ZIP_MAX_ENTRIES})")
+        for i,info in enumerate(entries):
+            if info.file_size > ZIP_MAX_ENTRY_BYTES:
+                raise ValueError(f"Zip entry too large: {info.filename}")
+            total += info.file_size
+            if total > ZIP_MAX_TOTAL_BYTES:
+                raise ValueError("Zip uncompressed size exceeds limit")
             if emit_fn: emit_fn(i+1,len(entries))
-            bn=secure_filename(os.path.basename(entry))
+            bn=secure_filename(os.path.basename(info.filename))
             if not bn: continue
-            dest=os.path.join(sar_dir,bn)
-            with zf.open(entry) as src, open(dest,"wb") as dst: dst.write(src.read())
+            dest=unique_path(sar_dir,bn)
+            with zf.open(info) as src, open(dest,"wb") as dst: shutil.copyfileobj(src,dst)
             ext=bn.rsplit(".",1)[-1].lower()
             try: result.append(_convert_single(dest,ext))
-            except Exception: pass
+            except Exception:
+                log.warning("Could not convert %s from zip", bn, exc_info=True)
     return result
 
 # Auth
 @app.before_request
 def load_user():
     g.current_user=None
-    uid=session.get("user_id")
-    if uid: g.current_user=get_user_by_id(uid)
-    if not users_file_exists() and request.endpoint not in {"login","setup","static"}:
+    try:
+        uid=session.get("user_id")
+        if uid: g.current_user=get_user_by_id(uid)
+        no_users = not users_file_exists()
+    except UsersFileCorrupt:
+        # A corrupt users file must lock the app down — NOT fall through to
+        # /setup where anyone on the network could create a fresh admin.
+        log.error("users.json is corrupt — refusing to serve requests")
+        return ("User database is corrupt or unreadable. Restore data/users.json "
+                "from backup, then restart the server."), 500
+    if no_users and request.endpoint not in {"login","setup","static"}:
         return redirect(url_for("setup"))
 @app.context_processor
 def inject_user(): return {"current_user": g.current_user}
@@ -343,13 +388,13 @@ def _get_csrf_token() -> str:
 
 @app.before_request
 def _csrf_protect():
-    """Enforce CSRF token on all mutating requests."""
+    """Enforce CSRF token on all mutating requests (login/setup included —
+    their forms render the hidden _csrf_token field)."""
     if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
         return
-    # Login and setup pages use form-based CSRF
-    if request.endpoint in ('login', 'setup', 'static'):
+    if request.endpoint == 'static':
         return
-    # API routes must send X-CSRF-Token header
+    # API routes send X-CSRF-Token header; HTML forms send _csrf_token field
     token_from_header = request.headers.get('X-CSRF-Token', '')
     token_from_form   = request.form.get('_csrf_token', '')
     token             = token_from_header or token_from_form
@@ -359,17 +404,63 @@ def _csrf_protect():
             return jsonify({'error': 'CSRF validation failed'}), 403
         return render_template('403.html'), 403
 
+# ── Login rate limiting ────────────────────────────────────────────────────
+# Sliding window per (client IP, username): 5 failures in 5 minutes locks
+# further attempts for the remainder of the window.
+_LOGIN_MAX_FAILS = 5
+_LOGIN_WINDOW_S  = 300
+_login_fails: dict[tuple, list] = {}
+_login_fails_lock = threading.Lock()
+
+def _login_throttled(ip: str, username: str) -> int:
+    """Seconds the caller must still wait, or 0 if allowed."""
+    key = (ip, username.lower())
+    now = time.time()
+    with _login_fails_lock:
+        attempts = [t for t in _login_fails.get(key, []) if now - t < _LOGIN_WINDOW_S]
+        _login_fails[key] = attempts
+        if len(attempts) >= _LOGIN_MAX_FAILS:
+            return int(_LOGIN_WINDOW_S - (now - attempts[0])) + 1
+    return 0
+
+def _login_record_failure(ip: str, username: str):
+    key = (ip, username.lower())
+    with _login_fails_lock:
+        _login_fails.setdefault(key, []).append(time.time())
+        # Opportunistic cleanup so the dict can't grow unbounded
+        if len(_login_fails) > 1000:
+            cutoff = time.time() - _LOGIN_WINDOW_S
+            for k in [k for k, v in _login_fails.items() if not v or v[-1] < cutoff]:
+                _login_fails.pop(k, None)
+
+def _login_clear(ip: str, username: str):
+    with _login_fails_lock:
+        _login_fails.pop((ip, username.lower()), None)
+
 @app.route("/login",methods=["GET","POST"])
 def login():
     if not users_file_exists(): return redirect(url_for("setup"))
     if g.current_user: return redirect(url_for("dashboard"))
     error=None
     if request.method=="POST":
-        u=authenticate(request.form.get("username","").strip(),request.form.get("password",""))
-        if u: session["user_id"]=u.id; return redirect(url_for("dashboard"))
+        un=request.form.get("username","").strip()
+        ip=request.remote_addr or "?"
+        wait=_login_throttled(ip,un)
+        if wait:
+            error=f"Too many failed attempts. Try again in {wait} seconds."
+            log.warning("Login throttled for %r from %s", un, ip)
+            return render_template("login.html",error=error),429
+        u=authenticate(un,request.form.get("password",""))
+        if u:
+            _login_clear(ip,un)
+            session["user_id"]=u.id
+            log.info("Login: %s from %s", un, ip)
+            return redirect(url_for("dashboard"))
+        _login_record_failure(ip,un)
+        log.warning("Failed login for %r from %s", un, ip)
         error="Invalid username or password."
     return render_template("login.html",error=error)
-@app.route("/logout")
+@app.route("/logout",methods=["POST"])
 def logout(): session.pop("user_id",None); return redirect(url_for("login"))
 @app.route("/setup",methods=["GET","POST"])
 def setup():
@@ -526,7 +617,7 @@ def create_sar():
     saved=[]
     for f in files:
         if f.filename and allowed_file(f.filename):
-            fn=secure_filename(f.filename); fp=os.path.join(sd,fn); f.save(fp)
+            fn=secure_filename(f.filename); fp=unique_path(sd,fn); f.save(fp)
             saved.append((fp,fn.rsplit(".",1)[-1].lower()))
     if not saved: return jsonify({"error":"No valid files uploaded"}),400
     jid,q=_new_job()
@@ -693,11 +784,24 @@ def finalise_sar(sid):
     if not sar: return jsonify({"error":"Not found"}),404
     od=os.path.join(OUTPUT_DIR,sid); os.makedirs(od,exist_ok=True)
     try:
-        rf=[os.path.basename(apply_redactions(pp,sar.candidates,od)) for pp in sar.pdf_files]
-        lp=generate_redaction_log(sar.candidates,od,sid)
-    except Exception as e: import traceback; traceback.print_exc(); return jsonify({"error":f"Redaction failed: {e}"}),500
-    sar.status="complete"; sar.workflow_status="complete"; _save(sar)
-    return jsonify({"redacted_files":rf,"log_file":os.path.basename(lp)})
+        rf=[]; failed=[]
+        for pp in sar.pdf_files:
+            out_path,file_failed=apply_redactions(pp,sar.candidates,od)
+            rf.append(os.path.basename(out_path)); failed.extend(file_failed)
+        failed_ids={c.id for c in failed}
+        lp=generate_redaction_log(sar.candidates,od,sid,failed_ids=failed_ids)
+    except Exception as e:
+        log.exception("Finalise failed for SAR %s", sid)
+        return jsonify({"error":f"Redaction failed: {e}"}),500
+    sar.status="complete"; sar.workflow_status="complete"
+    sar.redaction_failures=[{"id":c.id,"text":c.text,"source_file":c.source_file,
+                             "page_num":c.page_num,"category":c.category.value}
+                            for c in failed]
+    _save(sar)
+    if failed:
+        log.warning("SAR %s finalised with %d unplaced redactions", sid, len(failed))
+    return jsonify({"redacted_files":rf,"log_file":os.path.basename(lp),
+                    "failed_redactions":sar.redaction_failures})
 @app.route("/api/sar/<sid>/outputs")
 @require_login
 def list_outputs(sid):
@@ -780,7 +884,7 @@ def _do_import(buf,sd):
                 bn=os.path.basename(name)
                 if bn:
                     with zf.open(name) as src, open(os.path.join(sdir,bn),"wb") as dst: dst.write(src.read())
-    with open(os.path.join(SAR_DATA_DIR,f"{sid2}.json"),"w") as jf: json.dump(sd,jf,indent=2)
+    atomic_write_json(os.path.join(SAR_DATA_DIR,f"{sid2}.json"),sd)
     _load_all()
 
 # Manual redact, delete, archive, notes
@@ -828,6 +932,10 @@ def delete_page(sid):
     d=request.json or {}; fn=d.get("filename"); pn=d.get("page_num")
     pp=next((p for p in sar.pdf_files if os.path.basename(p)==fn),None)
     if not pp: return jsonify({"error":"File not found"}),404
+    # Preserve the document as originally received before any destructive edit
+    orig_dir=os.path.join(_sar_dir(sid),"originals"); os.makedirs(orig_dir,exist_ok=True)
+    orig_copy=os.path.join(orig_dir,os.path.basename(pp))
+    if not os.path.exists(orig_copy): shutil.copy2(pp,orig_copy)
     import fitz; doc=fitz.open(pp)
     if pn is None or pn<0 or pn>=len(doc): doc.close(); return jsonify({"error":"Invalid page number"}),400
     doc.delete_page(pn); doc.save(pp,incremental=False); npc=len(doc); doc.close()
@@ -982,7 +1090,7 @@ def create_report():
     saved=[]
     for f in files:
         if f.filename and allowed_file(f.filename):
-            fn=secure_filename(f.filename); fp=os.path.join(rd,fn); f.save(fp)
+            fn=secure_filename(f.filename); fp=unique_path(rd,fn); f.save(fp)
             saved.append((fp,fn.rsplit(".",1)[-1].lower()))
     if not saved: return jsonify({"error":"No valid files uploaded"}),400
     cb=g.current_user.id; cbn=g.current_user.display_name; ca=datetime.now(timezone.utc).isoformat()

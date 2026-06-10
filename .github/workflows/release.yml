@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 2.3.0 — no leading v)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -21,9 +27,14 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Extract version from tag
+      - name: Extract version
         id: ver
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install build dependencies
         run: pip install --quiet flask waitress pymupdf striprtf
@@ -111,4 +122,5 @@ jobs:
           gh release create "v${VERSION}" \
             --title "SAR Redact v${VERSION}" \
             --notes-file _release_notes.md \
+            --target "${{ github.sha }}" \
             "${ASSETS[@]}"

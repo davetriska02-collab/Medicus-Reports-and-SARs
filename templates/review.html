@@ -43,9 +43,9 @@ body { overflow: hidden; }
     <button class="btn-sm" id="sort-date-btn" title="Sort by date" onclick="setFileOrder('date')">Date</button>
     <button class="btn-sm" id="sort-file-btn" title="Sort by file" onclick="setFileOrder('file')">File</button>
     <div class="toolbar-divider"></div>
-    <button class="btn-sm" id="prev-page-btn" title="Previous page (←)">‹</button>
+    <button class="btn-sm" id="prev-page-btn" title="Previous page (←)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 2 4 6.5 8 11"/></svg></button>
     <span id="page-indicator" style="font-family:var(--mono);font-size:10px;color:var(--t4);white-space:nowrap;min-width:50px;text-align:center;">1 / —</span>
-    <button class="btn-sm" id="next-page-btn" title="Next page (→)">›</button>
+    <button class="btn-sm" id="next-page-btn" title="Next page (→)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 2 9 6.5 5 11"/></svg></button>
   </div>
 
   <div class="toolbar-right">
@@ -55,16 +55,16 @@ body { overflow: hidden; }
       <button id="zoom-in-btn" title="Zoom in (+)">+</button>
     </div>
     <div class="toolbar-divider"></div>
-    <button class="btn-sm btn-draw-mode" id="draw-mode-btn" title="Draw manual redaction (D)">✎</button>
-    <button class="btn-sm" id="legend-btn" title="Toggle legend (L)">◉</button>
-    <button class="btn-sm" id="page-nav-btn" title="Page navigator (N)">⊞</button>
+    <button class="btn-sm btn-draw-mode" id="draw-mode-btn" title="Draw manual redaction (D)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2l2 2-6.5 6.5L2 11l.5-2.5L9 2z"/></svg></button>
+    <button class="btn-sm" id="legend-btn" title="Toggle legend (L)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="5"/><circle cx="6.5" cy="6.5" r="1.5"/></svg></button>
+    <button class="btn-sm" id="page-nav-btn" title="Page navigator (N)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="4" height="4" rx="0.5"/><rect x="7.5" y="1.5" width="4" height="4" rx="0.5"/><rect x="1.5" y="7.5" width="4" height="4" rx="0.5"/><rect x="7.5" y="7.5" width="4" height="4" rx="0.5"/></svg></button>
     <div class="toolbar-divider"></div>
     {% if current_user and current_user.role == 'admin' %}
-    <button class="btn-sm" id="settings-btn" title="Detection settings">⚙</button>
+    <button class="btn-sm" id="settings-btn" title="Detection settings"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="2"/><path d="M6.5 1v1.5M6.5 10.5V12M1 6.5h1.5M10.5 6.5H12M2.6 2.6l1.1 1.1M9.3 9.3l1.1 1.1M9.3 3.7l-1.1 1.1M3.8 9.2l-1.1 1.1"/></svg></button>
     <button class="btn btn-primary" id="finalise-btn" style="height:28px;padding:0 12px;font-size:11px;">Finalise</button>
     {% endif %}
-    <a href="/api/sar/{{ sar.id }}/export" class="btn btn-ghost" style="height:28px;padding:0 10px;font-size:11px;display:flex;align-items:center;" title="Export .sarpack for transfer to another machine">↓ Export</a>
-    <a href="/" class="btn btn-ghost" style="height:28px;padding:0 10px;font-size:11px;display:flex;align-items:center;">✕</a>
+    <a href="/api/sar/{{ sar.id }}/export" class="btn btn-ghost" style="height:28px;padding:0 10px;font-size:11px;display:flex;align-items:center;gap:5px;" title="Export .sarpack for transfer to another machine"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 7 6.5 10.5 10 7"/><line x1="6.5" y1="2" x2="6.5" y2="10.5"/><path d="M1.5 12h10"/></svg> Export</a>
+    <a href="/" class="btn btn-ghost" style="height:28px;padding:0 10px;font-size:11px;display:flex;align-items:center;"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="11" y2="11"/><line x1="11" y1="2" x2="2" y2="11"/></svg></a>
   </div>
 </div>
 
@@ -125,10 +125,10 @@ body { overflow: hidden; }
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;">
         <button class="btn-sm active" id="filter-all" onclick="setFilter('all')">All</button>
-        <button class="btn-sm" id="filter-flagged" onclick="setFilter('flagged')" title="Flagged">⚑</button>
-        <button class="btn-sm" id="filter-auto" onclick="setFilter('auto_redact')" title="Auto">✓</button>
-        <button class="btn-sm" id="filter-pending" onclick="setFilter('pending')" title="Pending">○</button>
-        <button class="btn-sm" id="group-btn" title="Group occurrences by name — review each person once">⊟ Group</button>
+        <button class="btn-sm" id="filter-flagged" onclick="setFilter('flagged')" title="Flagged"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 1.5v10"/><path d="M2.5 2.5h7l-2 2.5 2 2.5H2.5"/></svg></button>
+        <button class="btn-sm" id="filter-auto" onclick="setFilter('auto_redact')" title="Auto"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 7 5 10 11 4"/></svg></button>
+        <button class="btn-sm" id="filter-pending" onclick="setFilter('pending')" title="Pending"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="5"/></svg></button>
+        <button class="btn-sm" id="group-btn" title="Group occurrences by name — review each person once"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="10" height="10" rx="1"/><line x1="4" y1="6.5" x2="9" y2="6.5"/></svg> Group</button>
       </div>
     </div>
     <div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
@@ -212,25 +212,25 @@ body { overflow: hidden; }
 </div>
 
 <!-- fix-mode banner (hidden until JS activates fix mode) -->
-<div id="fix-mode-banner" style="display:none;position:fixed;top:var(--toolbar-h);left:0;right:0;z-index:200;background:#7c2d12;border-bottom:2px solid #ef4444;padding:10px 18px;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+<div id="fix-mode-banner" style="display:none;position:fixed;top:var(--toolbar-h);left:0;right:0;z-index:200;padding:10px 18px;box-shadow:0 4px 12px rgba(0,0,0,0.5);" class="fix-banner">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
     <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;color:#fca5a5;font-size:13px;margin-bottom:3px;" id="fix-banner-title">Fixing failure 1 of 1</div>
-      <div style="font-size:12px;color:#fecaca;" id="fix-banner-detail"></div>
-      <div style="font-size:11px;color:#fca5a5;margin-top:3px;font-style:italic;opacity:0.85;" id="fix-banner-context"></div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:3px;" id="fix-banner-title">Fixing failure 1 of 1</div>
+      <div style="font-size:12px;opacity:0.85;" id="fix-banner-detail"></div>
+      <div style="font-size:11px;margin-top:3px;font-style:italic;opacity:0.7;" id="fix-banner-context"></div>
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;align-items:center;">
-      <button class="btn-sm" id="fix-prev-btn" onclick="fixPrev()" title="Previous failure" style="background:#991b1b;color:#fca5a5;border-color:#b91c1c;">‹ Prev</button>
-      <button class="btn-sm" id="fix-next-btn" onclick="fixNext()" title="Next failure" style="background:#991b1b;color:#fca5a5;border-color:#b91c1c;">Next ›</button>
-      <button class="btn-sm" id="fix-mark-btn" onclick="fixMarkDone()" title="Mark as fixed — draw a manual redaction box first" style="background:#065f46;color:#6ee7b7;border-color:#047857;">Mark fixed</button>
-      <button class="btn-sm" id="fix-dismiss-btn" onclick="fixDismiss()" title="Dismiss — only if text genuinely not present in document" style="background:#78350f;color:#fde68a;border-color:#92400e;">Dismiss</button>
-      <button class="btn-sm" onclick="fixExit()" title="Exit fix mode" style="background:#1e3050;color:#93a8c5;border-color:#2a4268;">Exit fix mode</button>
+      <button class="btn-sm btn-fix-nav" id="fix-prev-btn" onclick="fixPrev()" title="Previous failure">‹ Prev</button>
+      <button class="btn-sm btn-fix-nav" id="fix-next-btn" onclick="fixNext()" title="Next failure">Next ›</button>
+      <button class="btn-sm btn-fix-mark" id="fix-mark-btn" onclick="fixMarkDone()" title="Mark as fixed — draw a manual redaction box first">Mark fixed</button>
+      <button class="btn-sm btn-fix-dismiss" id="fix-dismiss-btn" onclick="fixDismiss()" title="Dismiss — only if text genuinely not present in document">Dismiss</button>
+      <button class="btn-sm btn-fix-exit" onclick="fixExit()" title="Exit fix mode">Exit fix mode</button>
     </div>
   </div>
 </div>
 
 <!-- fix-mode all-done toast -->
-<div id="fix-done-toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;background:#064e3b;border:1px solid #047857;border-radius:8px;padding:14px 20px;color:#6ee7b7;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.5);text-align:center;">
+<div id="fix-done-toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;border-radius:8px;padding:14px 20px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.5);text-align:center;" class="fix-done-toast-token">
   All failures handled — re-finalise to apply your manual redactions
   <br><button class="btn btn-primary" style="margin-top:8px;font-size:11px;height:28px;padding:0 12px;" onclick="document.getElementById('finalise-btn')?.click();document.getElementById('fix-done-toast').style.display='none'">Re-finalise now</button>
 </div>

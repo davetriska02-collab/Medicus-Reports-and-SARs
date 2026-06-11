@@ -7,6 +7,7 @@
     <h1>Reports</h1>
     <div class="heading-rule"></div>
   </div>
+  {% if reports %}
   <a href="/reports/new" class="btn btn-primary">
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
       <line x1="6.5" y1="1.5" x2="6.5" y2="11.5"/>
@@ -14,6 +15,15 @@
     </svg>
     New report
   </a>
+  {% else %}
+  <a href="/reports/new" class="btn btn-ghost">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <line x1="6.5" y1="1.5" x2="6.5" y2="11.5"/>
+      <line x1="1.5" y1="6.5" x2="11.5" y2="6.5"/>
+    </svg>
+    New report
+  </a>
+  {% endif %}
 </div>
 
 {% set total_r = reports|length %}
@@ -21,8 +31,8 @@
 {% set complete_r  = reports|selectattr('status','equalto','complete')|list|length %}
 <div class="stat-grid" style="margin-bottom:24px;">
   <div class="stat-card"><div class="stat-card-label">Total</div><div class="stat-card-value">{{ total_r }}</div></div>
-  <div class="stat-card"><div class="stat-card-label">In Progress</div><div class="stat-card-value reviewing">{{ in_progress }}</div></div>
-  <div class="stat-card"><div class="stat-card-label">Complete</div><div class="stat-card-value complete">{{ complete_r }}</div></div>
+  <div class="stat-card"><div class="stat-card-label">In Progress</div><div class="stat-card-value{% if in_progress %} reviewing{% endif %}">{{ in_progress }}</div></div>
+  <div class="stat-card"><div class="stat-card-label">Complete</div><div class="stat-card-value{% if complete_r %} complete{% endif %}">{{ complete_r }}</div></div>
 </div>
 
 {% if reports %}
@@ -31,7 +41,7 @@
   <div class="report-row">
     <div style="flex:1;">
       <div class="report-name">{{ r.patient.full_name }}</div>
-      <div class="report-meta">{{ r.template_name }} &nbsp;·&nbsp; {{ r.created_at[:10]|replace('-',' ')|truncate(11,True,'') }}
+      <div class="report-meta">{{ r.template_name }} &nbsp;·&nbsp; {{ r.created_at|fdate }}
         {% if r.created_by_name %}&nbsp;·&nbsp; {{ r.created_by_name }}{% endif %}
       </div>
     </div>
@@ -39,7 +49,7 @@
     {% else %}<span class="pill pill-reviewing">In progress</span>{% endif %}
     <a href="/reports/{{ r.id }}" class="btn-sm">Open</a>
     {% if current_user and current_user.role == 'admin' %}
-    <button class="btn-sm" style="color:var(--red);" onclick="deleteReport('{{ r.id }}')">Delete</button>
+    <button class="btn-sm-danger" onclick="deleteReport('{{ r.id }}')">Delete</button>
     {% endif %}
   </div>
   {% endfor %}
@@ -55,6 +65,7 @@
     </svg>
   </div>
   <div class="empty-state-title">No reports yet</div>
+  <div class="empty-state-hint">Generate a structured medical report from a template.</div>
   <div class="empty-state-actions">
     <a href="/reports/new" class="btn btn-primary">Create first report</a>
   </div>
@@ -69,11 +80,11 @@
     <div>
       <div class="settings-item-label">{{ t.name }}</div>
       <div class="settings-item-meta">{{ t.category }} &nbsp;·&nbsp; {{ t.questions|length }} questions
-        {% if t.is_builtin %}&nbsp;·&nbsp; <span style="color:var(--accent);">built-in</span>{% endif %}
+        {% if t.is_builtin %}&nbsp;·&nbsp; <span>built-in</span>{% endif %}
       </div>
     </div>
     {% if not t.is_builtin %}
-    <button class="btn-sm" style="color:var(--red);" onclick="deleteTemplate('{{ t.id }}')">Delete</button>
+    <button class="btn-sm-danger" onclick="deleteTemplate('{{ t.id }}')">Delete</button>
     {% endif %}
   </div>
   {% endfor %}

@@ -34,9 +34,9 @@
     <label>Target (SAR / report ID)</label>
     <input type="text" name="target" value="{{ f_target }}" placeholder="id">
   </div>
-  <button type="submit" class="btn btn-primary">Filter</button>
+  <button type="submit" class="btn btn-secondary btn-filter">Filter</button>
   {% if f_action or f_username or f_target %}
-  <a href="/admin/audit" class="btn btn-ghost">Clear</a>
+  <a href="/admin/audit" class="btn btn-ghost btn-filter">Clear</a>
   {% endif %}
 </form>
 
@@ -44,26 +44,26 @@
 <div style="color:var(--t4);font-size:13px;padding:24px 0;">No audit events recorded yet.</div>
 {% else %}
 <div style="font-size:11px;color:var(--t4);margin-bottom:8px;">Showing {{ events|length }} most recent event{{ 's' if events|length != 1 }}</div>
-<table style="width:100%;border-collapse:collapse;font-size:12px;">
+<table class="data-table">
   <thead>
-    <tr style="text-align:left;color:var(--t4);border-bottom:1px solid var(--border);">
-      <th style="padding:6px 10px 6px 0;">Time (UTC)</th>
-      <th style="padding:6px 10px;">Action</th>
-      <th style="padding:6px 10px;">User</th>
-      <th style="padding:6px 10px;">Target</th>
-      <th style="padding:6px 10px;">Detail</th>
-      <th style="padding:6px 0 6px 10px;">IP</th>
+    <tr>
+      <th>Time (UTC)</th>
+      <th>Action</th>
+      <th>User</th>
+      <th>Target</th>
+      <th>Detail</th>
+      <th>IP</th>
     </tr>
   </thead>
   <tbody>
     {% for e in events %}
-    <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:6px 10px 6px 0;white-space:nowrap;color:var(--t3);">{{ e.ts[:19]|replace('T',' ') }}</td>
-      <td style="padding:6px 10px;"><span class="pill" style="font-size:10px;">{{ e.action }}</span></td>
-      <td style="padding:6px 10px;">{{ e.username or '—' }}</td>
-      <td style="padding:6px 10px;font-family:monospace;font-size:11px;">{{ e.target or '—' }}</td>
-      <td style="padding:6px 10px;color:var(--t3);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ e.detail or '' }}</td>
-      <td style="padding:6px 0 6px 10px;color:var(--t4);">{{ e.ip or '' }}</td>
+    <tr>
+      <td class="ts">{{ e.ts[:19]|replace('T',' ') }}</td>
+      <td><span class="pill pill-neutral">{{ e.action }}</span></td>
+      <td>{{ e.username or '—' }}</td>
+      <td class="ts">{{ e.target or '—' }}</td>
+      <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t3);">{{ e.detail or '' }}</td>
+      <td style="color:var(--t4);">{{ e.ip or '' }}</td>
     </tr>
     {% endfor %}
   </tbody>

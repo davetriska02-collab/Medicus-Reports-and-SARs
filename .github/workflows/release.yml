@@ -109,6 +109,9 @@ jobs:
           print(f"Release notes ({len(notes)} chars) written")
           PYEOF
 
+      - name: Generate SHA256SUMS
+        run: (cd dist && sha256sum *.zip > SHA256SUMS)
+
       # ── Create the GitHub release and attach all assets ──────────────────────
       - name: Create GitHub Release
         env:
@@ -118,6 +121,7 @@ jobs:
           ASSETS=(
             "dist/sar-redact-v${VERSION}.zip"
             "dist/sar-redact-offline-v${VERSION}.zip"
+            "dist/SHA256SUMS"
           )
           # Include TLS bundle only if the build succeeded
           TLS="dist/sar-redact-offline-tls-v${VERSION}.zip"

@@ -77,7 +77,9 @@ failure handling) is markedly more mature than the surrounding web tier.
 - **H1 — Lost-update race on `sar.candidates`.** Mutating routes do
   `_get → mutate → _save`; the per-SAR lock covers only the DB write, not the
   read-mutate window. Concurrent reviewers can silently overwrite decisions.
-  *Open — Milestone 1.* *FACT.*
+  **✅ FIXED in 2.5.4** (all mutating routes now hold the per-SAR RLock across the
+  full read-mutate-save sequence via `_mutate` context manager; `_lock_for` uses
+  `threading.RLock` to prevent self-deadlock).
 - **H2 — No HTTP security headers.** **✅ FIXED in 2.5.3** (`_security_headers`
   after-request hook).
 - **H3 — Session cookies plaintext by default.** **✅ FIXED in 2.5.3**
@@ -87,12 +89,15 @@ failure handling) is markedly more mature than the surrounding web tier.
   attribute handlers).
 - **H5 — `.sarpack` import path traversal.** `_do_import` uses `sd["id"]` from the
   uploaded file directly as a directory name; a crafted id can write outside
-  `UPLOAD_DIR` (admin-gated, but a code-overwrite path). *Open — Milestone 1.*
-  *FACT.*
+  `UPLOAD_DIR` (admin-gated, but a code-overwrite path).
+  **✅ FIXED in 2.5.4** (id validated against `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`
+  and `os.path.realpath` containment check; rejected ids are audit-logged).
 - **H6 — No integrity verification on downloaded code.** `update.bat` xcopies a
   release zip over the live install with no checksum and no rollback;
-  `start_server.bat` fetches Python + `get-pip.py` unverified. *Open — Milestone 1.*
-  *FACT.*
+  `start_server.bat` fetches Python + `get-pip.py` unverified.
+  **✅ FIXED in 2.5.4** (`update.bat` downloads and verifies `SHA256SUMS`, auto-restores
+  backup on install failure; `start_server.bat` pins and verifies the Python embed
+  SHA-256; `release.yml` generates `SHA256SUMS` and attaches it to every release).
 - **H7 — No GDPR retention / auto-deletion.** Completed SARs (full medical records)
   are deleted only by manual admin action; the DPIA flags this as unfinished.
   *Open — Milestone 2.* *FACT + JUDGMENT.*
@@ -174,9 +179,9 @@ XSS escaping, secure-cookie/session-lifetime.
 - M0.3 (S): wire `tools/benchmark_detection.py` into CI with a recall/precision floor.
 
 **Milestone 1 — Critical & High correctness/security (remaining)**
-- M1.1 (M): fix H1 lost-update — re-read-under-lock or optimistic version check.
-- M1.3 (S): H5 — validate `sd["id"]` on `.sarpack` import (realpath-contained).
-- M1.4 (M): H6 — checksum-verify downloads; auto-restore backup on update failure.
+- ~~M1.1 (M): fix H1 lost-update — re-read-under-lock or optimistic version check.~~ **✅ FIXED in 2.5.4**
+- ~~M1.3 (S): H5 — validate `sd["id"]` on `.sarpack` import (realpath-contained).~~ **✅ FIXED in 2.5.4**
+- ~~M1.4 (M): H6 — checksum-verify downloads; auto-restore backup on update failure.~~ **✅ FIXED in 2.5.4**
 
 **Milestone 2 — High-leverage**
 - M2.1 (L): H7 — configurable retention + scheduled deletion of completed SARs.

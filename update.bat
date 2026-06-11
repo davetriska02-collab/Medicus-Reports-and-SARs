@@ -44,9 +44,9 @@ if errorlevel 1 (
 )
 del "%ROOT%_api_result.txt" 2>nul
 
-:: Extract tag_name and download URL from response
+:: Extract tag_name, download URL, and SHA256SUMS URL from response
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$json = Get-Content '%ROOT%_api_response.txt' -Raw | ConvertFrom-Json; $json.tag_name | Set-Content '%ROOT%_latest_tag.txt'; ($json.assets | Where-Object { $_.name -match '^sar-redact-v[^-]+\.zip$' } | Select-Object -First 1).browser_download_url | Set-Content '%ROOT%_dl_url.txt'; Write-Host 'PARSE_OK'" > "%ROOT%_parse_result.txt" 2>&1
+  "$json = Get-Content '%ROOT%_api_response.txt' -Raw | ConvertFrom-Json; $json.tag_name | Set-Content '%ROOT%_latest_tag.txt'; ($json.assets | Where-Object { $_.name -match '^sar-redact-v[^-]+\.zip$' } | Select-Object -First 1).browser_download_url | Set-Content '%ROOT%_dl_url.txt'; $sums = ($json.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1).browser_download_url; if ($sums) { $sums | Set-Content '%ROOT%_sums_url.txt' } else { Set-Content '%ROOT%_sums_url.txt' '' }; Write-Host 'PARSE_OK'" > "%ROOT%_parse_result.txt" 2>&1
 
 findstr /C:"PARSE_OK" "%ROOT%_parse_result.txt" >nul
 if errorlevel 1 (
@@ -63,8 +63,10 @@ del "%ROOT%_api_response.txt" 2>nul
 
 set /p LATEST_TAG=<"%ROOT%_latest_tag.txt"
 set /p DL_URL=<"%ROOT%_dl_url.txt"
+set /p SUMS_URL=<"%ROOT%_sums_url.txt"
 del "%ROOT%_latest_tag.txt" 2>nul
 del "%ROOT%_dl_url.txt" 2>nul
+del "%ROOT%_sums_url.txt" 2>nul
 
 if "%LATEST_TAG%"=="" (
     echo  ERROR: Could not determine latest version tag.
@@ -139,6 +141,71 @@ if errorlevel 1 (
 del "%ROOT%_dlzip_result.txt" 2>nul
 echo  Download complete.
 
+:: ── Step 4b: Download SHA256SUMS and verify integrity ─────────────────────
+set TMPSUMS=%TEMP%\sar-redact-%LATEST_TAG%-SHA256SUMS
+set SUMS_OK=0
+
+if "%SUMS_URL%"=="" (
+    echo.
+    echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo   WARNING: This release has no checksum manifest --
+    echo   integrity of the downloaded file CANNOT be verified.
+    echo   Only continue if you trust the GitHub release page.
+    echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo.
+    echo  Press any key to continue anyway (Ctrl+C to abort)...
+    pause >nul
+    goto :skip_verify
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "try { Invoke-WebRequest -Uri '%SUMS_URL%' -OutFile '%TMPSUMS%' -UseBasicParsing; Write-Host 'DLSUMS_OK' } catch { Write-Host ('DLSUMS_FAIL: ' + $_.Exception.Message) }" > "%ROOT%_dlsums_result.txt" 2>&1
+
+findstr /C:"DLSUMS_OK" "%ROOT%_dlsums_result.txt" >nul
+if errorlevel 1 (
+    echo  WARNING: Could not download SHA256SUMS. Skipping integrity check.
+    del "%ROOT%_dlsums_result.txt" 2>nul
+    goto :skip_verify
+)
+del "%ROOT%_dlsums_result.txt" 2>nul
+
+:: Compute hash of the downloaded zip and compare against SHA256SUMS
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$zipname = [System.IO.Path]::GetFileName('%TMPZIP%'); $computed = (Get-FileHash -Path '%TMPZIP%' -Algorithm SHA256).Hash.ToLower(); $lines = Get-Content '%TMPSUMS%'; $expected = ''; foreach ($line in $lines) { $parts = $line -split '\s+'; if ($parts.Length -ge 2 -and $parts[1] -match [regex]::Escape($zipname)) { $expected = $parts[0].ToLower(); break } }; if ($expected -eq '') { Write-Host 'HASH_NOENTRY' } elseif ($computed -eq $expected) { Write-Host 'HASH_OK' } else { Write-Host ('HASH_MISMATCH:computed=' + $computed + ':expected=' + $expected) }" > "%ROOT%_hash_result.txt" 2>&1
+
+findstr /C:"HASH_OK" "%ROOT%_hash_result.txt" >nul
+if not errorlevel 1 (
+    echo  [OK] Checksum verified.
+    del "%ROOT%_hash_result.txt" 2>nul
+    del "%TMPSUMS%" 2>nul
+    goto :skip_verify
+)
+
+findstr /C:"HASH_NOENTRY" "%ROOT%_hash_result.txt" >nul
+if not errorlevel 1 (
+    echo  WARNING: Could not find this file's entry in SHA256SUMS. Skipping integrity check.
+    del "%ROOT%_hash_result.txt" 2>nul
+    del "%TMPSUMS%" 2>nul
+    goto :skip_verify
+)
+
+:: Hash mismatch — do NOT install
+echo.
+echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+echo   SECURITY ERROR: SHA-256 checksum MISMATCH!
+echo   The downloaded file does not match the release manifest.
+echo   The download may be corrupt or tampered with.
+echo   Aborting -- the existing installation has NOT been touched.
+echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+echo.
+type "%ROOT%_hash_result.txt"
+del "%ROOT%_hash_result.txt" 2>nul
+del "%TMPSUMS%" 2>nul
+del "%TMPZIP%" 2>nul
+pause & exit /b 1
+
+:skip_verify
+
 :: ── Step 5: Extract to temp folder ───────────────────────────────────────
 echo.
 echo  [4/7] Extracting update...
@@ -188,15 +255,43 @@ echo.
 echo  [6/7] Installing new files...
 
 :: Copy individual app files from the zip's sar-redact/ folder
+set INSTALL_OK=1
 for %%I in (app.py serve.py requirements.txt start_server.bat start_server.sh server_loop.bat install_as_server.bat update.bat SAR-Redact.html README.md INSTALL.md EASY_INSTALL_GUIDE.md SECURITY.md CHANGELOG.md) do (
-    if exist "%NEWFILES%\%%I" copy /Y "%NEWFILES%\%%I" "%ROOT%%%I" >nul 2>&1
+    if exist "%NEWFILES%\%%I" (
+        copy /Y "%NEWFILES%\%%I" "%ROOT%%%I" >nul 2>&1
+        if errorlevel 1 ( echo  ERROR: Failed to copy %%I & set INSTALL_OK=0 )
+    )
 )
 
 :: Copy app directories (sar, static, templates, tools) — NOT data/uploads/output
 for %%D in (sar static templates tools) do (
     if exist "%NEWFILES%\%%D" (
         xcopy /E /Y /I /Q "%NEWFILES%\%%D" "%ROOT%%%D\" >nul 2>&1
+        if errorlevel 1 ( echo  ERROR: Failed to copy directory %%D & set INSTALL_OK=0 )
     )
+)
+
+if "%INSTALL_OK%"=="0" (
+    echo.
+    echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo   INSTALL ERROR: One or more files could not be copied.
+    echo   Attempting automatic rollback from backup...
+    echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo.
+    :: Restore individual files
+    for %%I in (app.py serve.py requirements.txt start_server.bat start_server.sh server_loop.bat install_as_server.bat update.bat SAR-Redact.html README.md INSTALL.md EASY_INSTALL_GUIDE.md SECURITY.md CHANGELOG.md) do (
+        if exist "%BACKUP_DIR%\%%I" copy /Y "%BACKUP_DIR%\%%I" "%ROOT%%%I" >nul 2>&1
+    )
+    :: Restore app directories
+    for %%D in (sar static templates tools) do (
+        if exist "%BACKUP_DIR%\%%D" xcopy /E /Y /I /Q "%BACKUP_DIR%\%%D" "%ROOT%%%D\" >nul 2>&1
+    )
+    echo.
+    echo  Rollback complete. Your installation has been restored to v%CURRENT_VER%.
+    echo  Check that the disk is not full or write-protected and try again.
+    echo.
+    rmdir /s /q "%TMPDIR%" 2>nul
+    pause & exit /b 1
 )
 
 echo  New files installed.

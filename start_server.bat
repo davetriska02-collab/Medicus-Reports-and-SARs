@@ -43,6 +43,11 @@ echo  Downloading portable Python runtime...
 echo  (One-time ~15MB -- no admin rights needed)
 echo.
 
+:: SHA-256 of python-3.12.9-embed-amd64.zip (pinned at release time)
+:: NOTE: get-pip.py is intentionally NOT hash-pinned because it is a
+:: rolling bootstrap script that changes frequently upstream.
+set PYEMBED_SHA256=17f5e624c5b41a357da654bd37fb92e563f40021809cf35d81730bb10011980e
+
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "try { Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip' -OutFile '%ROOT%py-embed.zip' -UseBasicParsing; Write-Host 'DOWNLOAD_OK' } catch { Write-Host ('DOWNLOAD_FAIL: ' + $_.Exception.Message) }" > "%ROOT%dl_result.txt" 2>&1
 
@@ -57,6 +62,27 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 del "%ROOT%dl_result.txt" 2>nul
+
+:: Verify SHA-256 of the downloaded Python embed
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$computed = (Get-FileHash -Path '%ROOT%py-embed.zip' -Algorithm SHA256).Hash.ToLower(); $expected = '%PYEMBED_SHA256%'.ToLower(); if ($computed -eq $expected) { Write-Host 'HASH_OK' } else { Write-Host ('HASH_MISMATCH:computed=' + $computed + ':expected=' + $expected) }" > "%ROOT%hash_result.txt" 2>&1
+
+findstr /C:"HASH_OK" "%ROOT%hash_result.txt" >nul
+if errorlevel 1 (
+    echo.
+    echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo   SECURITY ERROR: Python runtime SHA-256 checksum MISMATCH!
+    echo   The downloaded file does not match the expected hash.
+    echo   Aborting to protect your system.
+    echo  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo.
+    type "%ROOT%hash_result.txt"
+    del "%ROOT%hash_result.txt" 2>nul
+    del "%ROOT%py-embed.zip" 2>nul
+    pause & exit /b 1
+)
+del "%ROOT%hash_result.txt" 2>nul
+echo  [OK] Python runtime checksum verified.
 
 :: Extract and check it worked
 echo  Extracting Python runtime...

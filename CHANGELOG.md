@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.5.4] — 2026-06-11
+
+### Fixed
+- **Lost-update race on SAR candidates** — before this fix, two reviewers approving different candidates at the same time could interleave their read-mutate-write cycles, causing one reviewer's decision to silently overwrite the other's. All mutating SAR routes now hold the per-SAR RLock across the full read-mutate-save sequence via a `_mutate` context manager.
+
+### Security
+- **`.sarpack` import id validation** — the id field extracted from an uploaded sarpack was previously used directly as a directory name; a crafted id such as `../../evil` could write files outside `UPLOAD_DIR`. The import now validates the id against a strict alphanumeric pattern and confirms the resolved path stays within the uploads root.
+- **Checksum-verified updates with auto-rollback** — `update.bat` now downloads the `SHA256SUMS` manifest from the same GitHub release, verifies the zip's SHA-256 before installing, aborts with a loud error on mismatch, and automatically restores the pre-update backup if any file copy step fails during install. Releases older than 2.5.4 that have no checksum manifest require an explicit keypress to continue.
+- **Pinned Python runtime hash** — `start_server.bat` now embeds the SHA-256 of `python-3.12.9-embed-amd64.zip` and verifies it after download before extracting. The hash is `17f5e624c5b41a357da654bd37fb92e563f40021809cf35d81730bb10011980e`. `get-pip.py` is intentionally left unverified (it is a rolling bootstrap script).
+
+---
+
 ## [2.5.3] — 2026-06-11
 
 ### Fixed

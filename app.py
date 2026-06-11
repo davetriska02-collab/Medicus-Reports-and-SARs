@@ -1,6 +1,7 @@
 import io, os, re, json, shutil, time, zipfile, threading, logging
 from logging.handlers import RotatingFileHandler
 from queue import Queue, Empty
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import (Flask, render_template, request, jsonify, send_file,
@@ -8,7 +9,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.5.3"
+APP_VERSION = "2.5.4"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -170,10 +171,20 @@ def _all():
 
 # Per-SAR locks: serialise mutate-and-save so two concurrent reviewers can't
 # interleave a half-mutated snapshot into the JSON file.
-_sar_locks: dict[str, threading.Lock] = {}
-def _lock_for(sid) -> threading.Lock:
+# RLock is required: routes hold the lock across mutate+_save, and _save
+# re-acquires it internally — a plain Lock would self-deadlock.
+_sar_locks: dict[str, threading.RLock] = {}
+def _lock_for(sid) -> threading.RLock:
     with _ar_lock:
-        return _sar_locks.setdefault(sid, threading.Lock())
+        return _sar_locks.setdefault(sid, threading.RLock())
+
+@contextmanager
+def _mutate(sid):
+    """Hold the SAR's lock across read-mutate-write so concurrent requests
+    cannot interleave and silently lose decisions."""
+    lk = _lock_for(sid)
+    with lk:
+        yield _get(sid)
 
 # Serialise
 def _to_dict(sar):
@@ -896,11 +907,12 @@ def get_candidates(sid):
 @app.route("/api/sar/<sid>/main_record",methods=["POST"])
 @require_login
 def set_main_record(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     fn=(request.json or {}).get("filename","")
-    if fn not in [os.path.basename(p) for p in sar.pdf_files]: return jsonify({"error":"File not in SAR"}),400
-    sar.main_record_file=fn; _save(sar); return jsonify({"ok":True})
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if fn not in [os.path.basename(p) for p in sar.pdf_files]: return jsonify({"error":"File not in SAR"}),400
+        sar.main_record_file=fn; _save(sar)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/page-image/<filename>/<int:pn>")
 @require_login
 def page_image(sid,filename,pn):
@@ -961,44 +973,44 @@ def output_page_count(sid,filename):
 @app.route("/api/sar/<sid>/candidate/<cid>/update",methods=["POST"])
 @require_login
 def update_candidate(sid,cid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     data=request.json or {}
-    for c in sar.candidates:
-        if c.id==cid:
-            if "status" in data:
-                try: c.status=RedactionStatus(data["status"])
-                except ValueError: return jsonify({"error":"Invalid status"}),400
-            if "exemption_code" in data: c.exemption_code=data["exemption_code"]
-            break
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        for c in sar.candidates:
+            if c.id==cid:
+                if "status" in data:
+                    try: c.status=RedactionStatus(data["status"])
+                    except ValueError: return jsonify({"error":"Invalid status"}),400
+                if "exemption_code" in data: c.exemption_code=data["exemption_code"]
+                break
+        _save(sar)
     _audit("candidate_updated", target=sid, detail=f"{cid}:{data.get('status','')}")
     return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/batch-update",methods=["POST"])
 @require_login
 def batch_update(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     data=request.json or {}
     ids=set(data.get("candidate_ids",[]))
     try: st=RedactionStatus(data.get("status",""))
     except Exception: return jsonify({"error":"Invalid status"}),400
-    n=sum(1 for c in sar.candidates if c.id in ids and (setattr(c,"status",st) or True))
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        n=sum(1 for c in sar.candidates if c.id in ids and (setattr(c,"status",st) or True))
+        _save(sar)
     _audit("candidates_batch_updated", target=sid, detail=f"{n} -> {st.value}")
     return jsonify({"ok":True,"updated":n})
 @app.route("/api/sar/<sid>/batch-by-text",methods=["POST"])
 @require_login
 def batch_by_text(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     data=request.json or {}; txt=data.get("text","").strip().lower()
     try: st=RedactionStatus(data.get("status",""))
     except Exception: return jsonify({"error":"Invalid status"}),400
-    n=0
-    for c in sar.candidates:
-        if c.text.strip().lower()==txt: c.status=st; n+=1
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        n=0
+        for c in sar.candidates:
+            if c.text.strip().lower()==txt: c.status=st; n+=1
+        _save(sar)
     _audit("candidates_batch_by_text", target=sid, detail=f"{n} -> {st.value}")
     return jsonify({"ok":True,"updated":n})
 @app.route("/api/sar/<sid>/detection-settings",methods=["GET"])
@@ -1012,34 +1024,39 @@ def get_detection_settings(sid):
 @app.route("/api/sar/<sid>/detection-settings",methods=["PUT"])
 @require_admin
 def update_detection_settings(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     data=request.json or {}
-    if "auto_redact_threshold" in data: sar.detection_settings.auto_redact_threshold=float(data["auto_redact_threshold"])
-    if "flag_threshold" in data: sar.detection_settings.flag_threshold=float(data["flag_threshold"])
-    if "enabled_categories" in data: sar.detection_settings.enabled_categories=data["enabled_categories"]
-    _save(sar); return jsonify({"ok":True})
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if "auto_redact_threshold" in data: sar.detection_settings.auto_redact_threshold=float(data["auto_redact_threshold"])
+        if "flag_threshold" in data: sar.detection_settings.flag_threshold=float(data["flag_threshold"])
+        if "enabled_categories" in data: sar.detection_settings.enabled_categories=data["enabled_categories"]
+        _save(sar)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/pause-clock",methods=["POST"])
 @require_admin
 def pause_clock(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
-    if sar.clock_paused: return jsonify({"error":"Clock already paused"}),400
-    sar.clock_paused=True; sar.paused_at=datetime.now(timezone.utc).isoformat()
-    _save(sar); return jsonify({"ok":True})
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if sar.clock_paused: return jsonify({"error":"Clock already paused"}),400
+        sar.clock_paused=True; sar.paused_at=datetime.now(timezone.utc).isoformat()
+        _save(sar)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/resume-clock",methods=["POST"])
 @require_admin
 def resume_clock(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
-    if not sar.clock_paused: return jsonify({"error":"Clock not paused"}),400
-    try: pd=max(0,(datetime.now().date()-datetime.fromisoformat(sar.paused_at).date()).days)
-    except Exception: pd=0
-    sar.total_paused_days+=pd
-    sar.pause_log.append({"paused_at":sar.paused_at,"resumed_at":datetime.now(timezone.utc).isoformat(),
-                          "reason":(request.json or {}).get("reason",""),"days":pd})
-    sar.clock_paused=False; sar.paused_at=""
-    _save(sar); return jsonify({"ok":True,"paused_days":pd,"total_paused_days":sar.total_paused_days})
+    reason=(request.json or {}).get("reason","")
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if not sar.clock_paused: return jsonify({"error":"Clock not paused"}),400
+        try: pd=max(0,(datetime.now().date()-datetime.fromisoformat(sar.paused_at).date()).days)
+        except Exception: pd=0
+        sar.total_paused_days+=pd
+        sar.pause_log.append({"paused_at":sar.paused_at,"resumed_at":datetime.now(timezone.utc).isoformat(),
+                              "reason":reason,"days":pd})
+        sar.clock_paused=False; sar.paused_at=""
+        _save(sar)
+        total=sar.total_paused_days
+    return jsonify({"ok":True,"paused_days":pd,"total_paused_days":total})
 @app.route("/api/sar/<sid>/acknowledgment",methods=["POST"])
 @require_login
 def generate_acknowledgment_letter(sid):
@@ -1057,26 +1074,26 @@ def generate_acknowledgment_letter(sid):
 @app.route("/api/sar/<sid>/signoff",methods=["POST"])
 @require_login
 def signoff_sar(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     cfg=_get_practice_config()
     if cfg.get("require_second_signoff","0")!="1":
         return jsonify({"error":"Second sign-off is not enabled"}),400
-    if sar.allocated_to and g.current_user.id==sar.allocated_to:
-        return jsonify({"error":"The second check must be done by someone other than the allocated reviewer"}),403
-    sar.signoff_by=g.current_user.id
-    sar.signoff_by_name=g.current_user.display_name
-    sar.signoff_at=datetime.now(timezone.utc).isoformat()
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if sar.allocated_to and g.current_user.id==sar.allocated_to:
+            return jsonify({"error":"The second check must be done by someone other than the allocated reviewer"}),403
+        sar.signoff_by=g.current_user.id
+        sar.signoff_by_name=g.current_user.display_name
+        sar.signoff_at=datetime.now(timezone.utc).isoformat()
+        _save(sar)
     _audit("sar_signed_off",target=sid,detail=g.current_user.display_name)
     return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/signoff/clear",methods=["POST"])
 @require_admin
 def clear_signoff(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
-    sar.signoff_by=""; sar.signoff_by_name=""; sar.signoff_at=""
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.signoff_by=""; sar.signoff_by_name=""; sar.signoff_at=""
+        _save(sar)
     _audit("sar_signoff_cleared",target=sid)
     return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/finalise",methods=["POST"])
@@ -1099,15 +1116,17 @@ def finalise_sar(sid):
     except Exception as e:
         log.exception("Finalise failed for SAR %s", sid)
         return jsonify({"error":f"Redaction failed: {e}"}),500
-    sar.status="complete"; sar.workflow_status="complete"
-    if not getattr(sar,"completed_at",""):
-        sar.completed_at=datetime.now(timezone.utc).isoformat()
-    sar.redaction_failures=[{"id":c.id,"text":c.text,"source_file":c.source_file,
-                             "page_num":c.page_num,"category":c.category.value,
-                             "context":getattr(c,"context","")}
-                            for c in failed]
-    sar.needs_refinalise = False
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.status="complete"; sar.workflow_status="complete"
+        if not getattr(sar,"completed_at",""):
+            sar.completed_at=datetime.now(timezone.utc).isoformat()
+        sar.redaction_failures=[{"id":c.id,"text":c.text,"source_file":c.source_file,
+                                 "page_num":c.page_num,"category":c.category.value,
+                                 "context":getattr(c,"context","")}
+                                for c in failed]
+        sar.needs_refinalise = False
+        _save(sar)
     _dictionary.record_unknown_approved(sar)
     _audit("sar_finalised", target=sid,
            detail=f"{len(rf)} files, {len(failed)} failed redactions")
@@ -1264,7 +1283,10 @@ def import_sar():
         ex=_get(sid2)
         return jsonify({"conflict":True,"sar_id":sid2,"existing_modified":ex.last_modified,
                         "import_modified":sd.get("last_modified"),"subject_name":sd.get("subject",{}).get("full_name","")})
-    buf.seek(0); _do_import(buf,sd)
+    try:
+        buf.seek(0); _do_import(buf,sd)
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
     _audit("sar_imported", target=sid2 or "", detail=sd.get("subject",{}).get("full_name",""))
     return jsonify({"ok":True,"sar_id":sid2})
 @app.route("/api/sar/import/force",methods=["POST"])
@@ -1275,11 +1297,28 @@ def import_sar_force():
     try:
         buf=io.BytesIO(f.read()); buf.seek(0)
         with zipfile.ZipFile(buf,"r") as zf: sd=json.loads(zf.read("sar.json"))
+    except Exception as e: return jsonify({"error":f"Force import failed: {e}"}),500
+    try:
         buf.seek(0); _do_import(buf,sd)
+    except ValueError as e: return jsonify({"error":str(e)}),400
     except Exception as e: return jsonify({"error":f"Force import failed: {e}"}),500
     return jsonify({"ok":True,"sar_id":sd.get("id")})
+_SARPACK_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+
 def _do_import(buf,sd):
-    sid2=sd["id"]; sdir=_sar_dir(sid2); os.makedirs(sdir,exist_ok=True)
+    sid2=sd.get("id","")
+    # H5: validate the id from the sarpack before touching the filesystem
+    if not _SARPACK_ID_RE.match(sid2):
+        _audit_event("sarpack_import_rejected", user_id="", username="", target="",
+                     detail=f"invalid id: {sid2[:80]!r}", ip="")
+        raise ValueError("Invalid SAR id in sarpack")
+    realpath_dir = os.path.realpath(_sar_dir(sid2))
+    upload_root = os.path.realpath(UPLOAD_DIR)
+    if not realpath_dir.startswith(upload_root + os.sep) and realpath_dir != upload_root:
+        _audit_event("sarpack_import_rejected", user_id="", username="", target="",
+                     detail=f"path traversal id: {sid2[:80]!r}", ip="")
+        raise ValueError("Invalid SAR id in sarpack")
+    sdir=_sar_dir(sid2); os.makedirs(sdir,exist_ok=True)
     buf.seek(0)
     with zipfile.ZipFile(buf,"r") as zf:
         for name in zf.namelist():
@@ -1295,14 +1334,14 @@ def _do_import(buf,sd):
 @app.route("/api/sar/<sid>/manual-redact",methods=["POST"])
 @require_login
 def manual_redact(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     d=request.json
     c=RedactionCandidate(text="[Manual redaction]",category=PIICategory.MANUAL,
         status=RedactionStatus.APPROVED,confidence=1.0,page_num=d["page_num"],
         x0=d["x0"],y0=d["y0"],x1=d["x1"],y1=d["y1"],
         reason="Manually drawn redaction",source_file=d["source_file"])
-    sar.candidates.append(c); _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.candidates.append(c); _save(sar)
     return jsonify({"id":c.id,"text":c.text,"category":c.category.value,"status":c.status.value,
                     "confidence":c.confidence,"page_num":c.page_num,"x0":c.x0,"y0":c.y0,"x1":c.x1,"y1":c.y1,
                     "reason":c.reason,"source_file":c.source_file})
@@ -1311,34 +1350,34 @@ def manual_redact(sid):
 @app.route("/api/sar/<sid>/failures/<cand_id>/resolve", methods=["POST"])
 @require_login
 def resolve_failure(sid, cand_id):
-    sar = _get(sid)
-    if not sar: return jsonify({"error": "Not found"}), 404
     dismissed = (request.json or {}).get("dismissed", False)
-    failures = getattr(sar, "redaction_failures", [])
-    entry = next((f for f in failures if f["id"] == cand_id), None)
-    if entry is None:
-        # Idempotent: already removed
-        return jsonify({"ok": True, "note": "already resolved"})
-    sar.redaction_failures = [f for f in failures if f["id"] != cand_id]
-    sar.needs_refinalise = True
-    if dismissed:
-        # When dismissed, reject the candidate so re-finalise won't attempt it again
-        for c in sar.candidates:
-            if c.id == cand_id:
-                c.status = RedactionStatus.REJECTED
-                break
-    else:
-        # Mark-fixed path: the reviewer has drawn a manual box as a replacement.
-        # Reject the original unplaceable candidate so re-finalise does not
-        # attempt it again (which would re-populate the same failure).
-        # Preserve the original reason by appending to it.
-        for c in sar.candidates:
-            if c.id == cand_id:
-                supersede_note = "Superseded by manual redaction via fix queue"
-                c.reason = (f"{c.reason}; {supersede_note}" if c.reason else supersede_note)
-                c.status = RedactionStatus.REJECTED
-                break
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error": "Not found"}), 404
+        failures = getattr(sar, "redaction_failures", [])
+        entry = next((f for f in failures if f["id"] == cand_id), None)
+        if entry is None:
+            # Idempotent: already removed
+            return jsonify({"ok": True, "note": "already resolved"})
+        sar.redaction_failures = [f for f in failures if f["id"] != cand_id]
+        sar.needs_refinalise = True
+        if dismissed:
+            # When dismissed, reject the candidate so re-finalise won't attempt it again
+            for c in sar.candidates:
+                if c.id == cand_id:
+                    c.status = RedactionStatus.REJECTED
+                    break
+        else:
+            # Mark-fixed path: the reviewer has drawn a manual box as a replacement.
+            # Reject the original unplaceable candidate so re-finalise does not
+            # attempt it again (which would re-populate the same failure).
+            # Preserve the original reason by appending to it.
+            for c in sar.candidates:
+                if c.id == cand_id:
+                    supersede_note = "Superseded by manual redaction via fix queue"
+                    c.reason = (f"{c.reason}; {supersede_note}" if c.reason else supersede_note)
+                    c.status = RedactionStatus.REJECTED
+                    break
+        _save(sar)
     if dismissed:
         _audit("redaction_failure_dismissed", target=sid,
                detail=f"{entry['text']!r} in {entry['source_file']} p{entry['page_num']+1}")
@@ -1392,36 +1431,37 @@ def delete_sar(sid):
 @app.route("/api/sar/<sid>/archive",methods=["POST"])
 @require_admin
 def archive_sar(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
-    sar.archived=True; _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.archived=True; _save(sar)
     _audit("sar_archived", target=sid)
     return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/unarchive",methods=["POST"])
 @require_admin
 def unarchive_sar(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
-    sar.archived=False; _save(sar); return jsonify({"ok":True})
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.archived=False; _save(sar)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/delete-page",methods=["POST"])
 @require_admin
 def delete_page(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     d=request.json or {}; fn=d.get("filename"); pn=d.get("page_num")
-    pp=next((p for p in sar.pdf_files if os.path.basename(p)==fn),None)
-    if not pp: return jsonify({"error":"File not found"}),404
-    # Preserve the document as originally received before any destructive edit
-    orig_dir=os.path.join(_sar_dir(sid),"originals"); os.makedirs(orig_dir,exist_ok=True)
-    orig_copy=os.path.join(orig_dir,os.path.basename(pp))
-    if not os.path.exists(orig_copy): shutil.copy2(pp,orig_copy)
-    import fitz; doc=fitz.open(pp)
-    if pn is None or pn<0 or pn>=len(doc): doc.close(); return jsonify({"error":"Invalid page number"}),400
-    doc.delete_page(pn); doc.save(pp,incremental=False); npc=len(doc); doc.close()
-    sar.candidates=[c for c in sar.candidates if not (c.source_file==fn and c.page_num==pn)]
-    for c in sar.candidates:
-        if c.source_file==fn and c.page_num>pn: c.page_num-=1
-    _save(sar)
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        pp=next((p for p in sar.pdf_files if os.path.basename(p)==fn),None)
+        if not pp: return jsonify({"error":"File not found"}),404
+        # Preserve the document as originally received before any destructive edit
+        orig_dir=os.path.join(_sar_dir(sid),"originals"); os.makedirs(orig_dir,exist_ok=True)
+        orig_copy=os.path.join(orig_dir,os.path.basename(pp))
+        if not os.path.exists(orig_copy): shutil.copy2(pp,orig_copy)
+        import fitz; doc=fitz.open(pp)
+        if pn is None or pn<0 or pn>=len(doc): doc.close(); return jsonify({"error":"Invalid page number"}),400
+        doc.delete_page(pn); doc.save(pp,incremental=False); npc=len(doc); doc.close()
+        sar.candidates=[c for c in sar.candidates if not (c.source_file==fn and c.page_num==pn)]
+        for c in sar.candidates:
+            if c.source_file==fn and c.page_num>pn: c.page_num-=1
+        _save(sar)
     _audit("page_deleted", target=sid, detail=f"{fn} p{pn+1}")
     return jsonify({"ok":True,"new_page_count":npc})
 @app.route("/api/sar/<sid>/notes",methods=["GET"])
@@ -1433,9 +1473,11 @@ def get_notes(sid):
 @app.route("/api/sar/<sid>/notes",methods=["PUT"])
 @require_login
 def update_notes(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
-    sar.notes=(request.json or {}).get("notes",""); _save(sar); return jsonify({"ok":True})
+    notes=(request.json or {}).get("notes","")
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.notes=notes; _save(sar)
+    return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/reparse",methods=["POST"])
 @require_login
 def reparse_sar(sid):
@@ -1450,10 +1492,13 @@ def reparse_sar(sid):
         for c in _c:
             k=(c.source_file,c.page_num,round(c.x0,1),round(c.y0,1),c.text.lower())
             if k not in keys: keys.add(k); new.append(c)
-    sar.candidates.extend(new)
-    sar.unscreened_pages=up
-    if up: _audit("pages_unscreened", target=sid, detail=f"{len(up)} page(s) not screened")
-    _save(sar); return jsonify({"ok":True,"new_found":len(new)})
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        sar.candidates.extend(new)
+        sar.unscreened_pages=up
+        if up: _audit("pages_unscreened", target=sid, detail=f"{len(up)} page(s) not screened")
+        _save(sar)
+    return jsonify({"ok":True,"new_found":len(new)})
 @app.route("/api/sar/<sid>/redetect",methods=["POST"])
 @require_admin
 def redetect_sar(sid):
@@ -1528,28 +1573,33 @@ def delete_staff(name): remove_staff_member(name); return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/allocate",methods=["POST"])
 @require_admin
 def allocate_sar(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     gid=(request.json or {}).get("user_id","")
-    if not gid: sar.allocated_to=""; sar.allocated_to_name=""; sar.workflow_status="new"
-    else:
+    if gid:
         gp=get_user_by_id(gid)
         if not gp: return jsonify({"error":"User not found"}),404
-        sar.allocated_to=gp.id; sar.allocated_to_name=gp.display_name; sar.workflow_status="in_review"
-    _save(sar)
-    _audit("sar_allocated", target=sid, detail=sar.allocated_to_name or "(unassigned)")
-    return jsonify({"ok":True,"workflow_status":sar.workflow_status})
+    else:
+        gp=None
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if not gp: sar.allocated_to=""; sar.allocated_to_name=""; sar.workflow_status="new"
+        else:
+            sar.allocated_to=gp.id; sar.allocated_to_name=gp.display_name; sar.workflow_status="in_review"
+        _save(sar)
+        alloc_name=sar.allocated_to_name; wf=sar.workflow_status
+    _audit("sar_allocated", target=sid, detail=alloc_name or "(unassigned)")
+    return jsonify({"ok":True,"workflow_status":wf})
 @app.route("/api/sar/<sid>/workflow",methods=["POST"])
 @require_login
 def update_workflow(sid):
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
     ns=(request.json or {}).get("status")
     if ns not in {"ready_for_signoff","in_review"}: return jsonify({"error":"Invalid status"}),400
-    if g.current_user.role=="gp":
-        if sar.allocated_to!=g.current_user.id: return jsonify({"error":"Not authorised"}),403
-        if ns!="ready_for_signoff": return jsonify({"error":"GPs may only submit for sign-off"}),403
-    sar.workflow_status=ns; _save(sar); return jsonify({"ok":True,"workflow_status":sar.workflow_status})
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        if g.current_user.role=="gp":
+            if sar.allocated_to!=g.current_user.id: return jsonify({"error":"Not authorised"}),403
+            if ns!="ready_for_signoff": return jsonify({"error":"GPs may only submit for sign-off"}),403
+        sar.workflow_status=ns; _save(sar); wf=sar.workflow_status
+    return jsonify({"ok":True,"workflow_status":wf})
 
 # Reports
 @app.route("/reports")

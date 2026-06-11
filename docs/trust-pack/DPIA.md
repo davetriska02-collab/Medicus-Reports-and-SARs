@@ -65,7 +65,7 @@ redaction log.
 | 2 | Redaction applied cosmetically and recoverable | Low | High | Content-stream removal + image pixel erasure (PyMuPDF redactions); failures reported, never silent; certificate blocked while failures exist | Low |
 | 3 | Unauthorised access on the LAN | Medium | High | Per-user accounts, roles, login rate limiting, idle timeout, POST-only logout, CSRF protection, optional TLS, full access audit trail | Low — **[PRACTICE: confirm physical/network controls]** |
 | 4 | Data loss / corruption | Low | Medium | Transactional SQLite storage, atomic writes, nightly backups with retention, originals preserved before destructive edits | Low — **[PRACTICE: confirm backup destination and restore test]** |
-| 5 | Excessive retention of SAR working copies | Medium | Medium | Archive/delete controls per SAR; deletion removes uploads, outputs and records | Medium — **[PRACTICE: set a retention schedule for completed SARs]** |
+| 5 | Excessive retention of SAR working copies | Medium | Medium | Archive/delete controls per SAR; deletion removes uploads, outputs and records; **automatic scheduled deletion of completed SARs after a configurable period (default 180 days); every deletion is recorded in the audit trail** | Low — confirm or adjust the default retention period in Settings (Workflow Settings → GDPR data retention) |
 | 6 | Wrong patient's documents uploaded to a SAR | Low | High | Subject details shown throughout review; subject-match exclusions make mismatches visible; audit trail of who uploaded what | Low-Medium — procedural control required **[PRACTICE]** |
 | 7 | Insider misuse (browsing records without need) | Low | High | Append-only audit of every record view with user/time/IP; admin review + CSV export | Low |
 

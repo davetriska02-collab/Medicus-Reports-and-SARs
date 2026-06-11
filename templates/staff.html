@@ -93,6 +93,26 @@
         Require a second sign-off before a SAR can be finalised
       </label>
       <div style="font-size:12px;color:var(--t4);">When enabled, a second reviewer (not the allocated GP) must sign off the SAR before an admin can finalise it.</div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
+
+      <div>
+        <label style="font-size:13px;color:var(--t2);font-weight:500;">GDPR data retention</label>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <label style="font-size:13px;color:var(--t2);">Automatically delete completed SARs after
+            <input type="number" id="cfg-retention-days" min="0" step="1"
+                   value="{{ practice.retention_days }}"
+                   style="width:70px;margin:0 4px;text-align:center;">
+            days &nbsp;<span style="font-size:12px;color:var(--t4);">(0 = never delete automatically)</span>
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--red);margin-top:8px;max-width:600px;">
+          <strong>Warning:</strong> Deletion is permanent and includes the uploaded records,
+          redacted output and the SAR record itself. Each deletion is recorded in the audit trail.
+          Confirm or adjust the default (180 days) to match your practice IG policy.
+        </div>
+      </div>
+
       <div>
         <button class="btn btn-primary" style="font-size:11px;height:30px;padding:0 14px;" onclick="saveWorkflowSettings()">Save workflow settings</button>
         <span id="wf-saved" style="font-size:12px;color:var(--green);display:none;margin-left:8px;">Saved</span>
@@ -149,10 +169,11 @@ function esc(s) {
 {% if current_user and current_user.role == 'admin' %}
 function saveWorkflowSettings() {
   const val = document.getElementById('cfg-second-signoff').checked ? '1' : '0';
+  const retDays = document.getElementById('cfg-retention-days')?.value ?? '180';
   fetch('/api/practice-config', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({require_second_signoff: val})
+    body: JSON.stringify({require_second_signoff: val, retention_days: retDays})
   }).then(r => r.json()).then(d => {
     if (d.ok) {
       const st = document.getElementById('wf-saved');

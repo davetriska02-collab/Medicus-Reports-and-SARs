@@ -266,26 +266,29 @@ def detect_pii(
     except Exception:
         _total_pages = max((p + 1 for p in pages), default=0)
 
+    # Pre-compute OCR requirement for every page once, so the PDF is opened
+    # at most once per page (M2.3: duplicate OCR-probe fix).
+    _ocr_needed: dict[int, bool] = {}
+    for _pn in range(_total_pages):
+        try:
+            _ocr_needed[_pn] = _page_needs_ocr(pdf_path, _pn)
+        except Exception:
+            _ocr_needed[_pn] = False
+
     # Build a combined set of page numbers to process:
     # pages that yielded spans + any pages that need OCR and have no spans.
     _all_page_nums: set[int] = set(pages.keys())
     for _pn in range(_total_pages):
         if _pn not in _all_page_nums:
-            try:
-                if _page_needs_ocr(pdf_path, _pn):
-                    _all_page_nums.add(_pn)
-                    pages[_pn] = []   # empty span list; will be OCR'd below
-            except Exception:
-                pass
+            if _ocr_needed.get(_pn, False):
+                _all_page_nums.add(_pn)
+                pages[_pn] = []   # empty span list; will be OCR'd below
 
     for page_num, page_spans in sorted(pages.items()):
         # ── OCR / unscreened detection ────────────────────────────────────
         _use_ocr_spans = False
         _page_candidates_start = len(candidates)
-        try:
-            _needs_ocr = _page_needs_ocr(pdf_path, page_num)
-        except Exception:
-            _needs_ocr = False
+        _needs_ocr = _ocr_needed.get(page_num, False)
         if _needs_ocr:
             if _ocr.tesseract_available():
                 ocr_spans = _ocr.ocr_page_spans(pdf_path, page_num)

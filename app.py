@@ -9,7 +9,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.5.4"
+APP_VERSION = "2.6.0"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -34,6 +34,8 @@ from sar.fsutil import atomic_write_json, unique_path
 from sar.audit import log_event as _audit_event, read_events as _audit_read, known_actions as _audit_actions
 from sar import store as _store
 from sar.backup import start_backup_thread as _start_backup_thread, get_status as _backup_status
+from sar.retention import (start_retention_thread as _start_retention_thread,
+                            get_status as _retention_status)
 from sar import dictionary as _dictionary
 
 _SERVER_STARTED = datetime.now(timezone.utc)
@@ -1417,16 +1419,27 @@ def find_on_page(sid):
         rects = []
     return jsonify({"rects": rects})
 
+def _delete_sar_data(sid: str) -> None:
+    """Perform the full deletion of a SAR: store record, upload/output dirs,
+    in-memory entry, and presence cleanup.  Used by both the admin delete
+    route and the automated retention sweep."""
+    for d in [os.path.join(UPLOAD_DIR, sid), os.path.join(OUTPUT_DIR, sid)]:
+        if os.path.isdir(d):
+            shutil.rmtree(d)
+    _store.delete_sar_doc(sid)
+    _del(sid)
+    # Clean up leaked presence key (LOW finding in audit)
+    with _presence_lock:
+        _presence.pop(sid, None)
+
 @app.route("/api/sar/<sid>/delete",methods=["POST"])
 @require_admin
 def delete_sar(sid):
     sar=_get(sid)
     if not sar: return jsonify({"error":"Not found"}),404
-    for d in [os.path.join(UPLOAD_DIR,sid),os.path.join(OUTPUT_DIR,sid)]:
-        if os.path.isdir(d): shutil.rmtree(d)
-    _store.delete_sar_doc(sid)
-    _del(sid)
-    _audit("sar_deleted", target=sid, detail=sar.subject.full_name)
+    subject_name = sar.subject.full_name
+    _delete_sar_data(sid)
+    _audit("sar_deleted", target=sid, detail=subject_name)
     return jsonify({"ok":True})
 @app.route("/api/sar/<sid>/archive",methods=["POST"])
 @require_admin
@@ -1503,35 +1516,43 @@ def reparse_sar(sid):
 @require_admin
 def redetect_sar(sid):
     """Update subject details + full re-detection, preserving existing decisions. Returns job_id."""
-    sar=_get(sid)
-    if not sar: return jsonify({"error":"Not found"}),404
+    # Apply subject-detail mutations and snapshot decision memory UNDER the
+    # per-SAR lock, then save ONCE before starting the background thread.
+    # The old code saved both here (request thread) and inside _proc (background
+    # thread) — a corrupt-snapshot window (M2.3).
     sp=(request.json or {}).get("subject",{})
-    for field in ("first_name","last_name","full_name","nhs_number","date_of_birth","address","phone","email","aliases"):
-        if field in sp: setattr(sar.subject,field,sp[field])
-    if sar.subject.first_name or sar.subject.last_name:
-        sar.subject.full_name=f"{sar.subject.first_name} {sar.subject.last_name}".strip()
-    mem={(c.text.strip().lower(),c.category.value):c.status.value for c in sar.candidates
-         if c.status.value not in ("flagged","auto_redact")}
+    with _mutate(sid) as sar:
+        if not sar: return jsonify({"error":"Not found"}),404
+        for field in ("first_name","last_name","full_name","nhs_number","date_of_birth","address","phone","email","aliases"):
+            if field in sp: setattr(sar.subject,field,sp[field])
+        if sar.subject.first_name or sar.subject.last_name:
+            sar.subject.full_name=f"{sar.subject.first_name} {sar.subject.last_name}".strip()
+        mem={(c.text.strip().lower(),c.category.value):c.status.value for c in sar.candidates
+             if c.status.value not in ("flagged","auto_redact")}
+        _save(sar)
     jid,q=_new_job()
     def _proc():
         try:
-            pf=[p for p in sar.pdf_files if os.path.exists(p)]; n=len(pf)
-            nc=[]; up=[]
-            for i,pp in enumerate(pf):
-                nm=os.path.basename(pp); _emit(q,0.1+0.85*i/max(n,1),f"Re-scanning {nm}... ({i+1}/{n})")
-                _c,_u=detect_pii(pp,extract_text_spans(pp),sar.subject,nm,settings=sar.detection_settings)
-                up.extend(_u)
-                for c in _c:
-                    r=mem.get((c.text.strip().lower(),c.category.value))
-                    if r: c.status=RedactionStatus(r)
-                    nc.append(c)
-            sar.candidates=nc+[c for c in sar.candidates if c.category==PIICategory.MANUAL]
-            sar.unscreened_pages=up
-            if up: _audit("pages_unscreened", target=sar.id, detail=f"{len(up)} page(s) not screened")
-            _save(sar); q.put({"done":True,"sar_id":sar.id,"total_candidates":len(sar.candidates)})
+            with _mutate(sid) as sar:
+                if not sar: q.put({"error":"SAR not found"}); return
+                pf=[p for p in sar.pdf_files if os.path.exists(p)]; n=len(pf)
+                nc=[]; up=[]
+                for i,pp in enumerate(pf):
+                    nm=os.path.basename(pp); _emit(q,0.1+0.85*i/max(n,1),f"Re-scanning {nm}... ({i+1}/{n})")
+                    _c,_u=detect_pii(pp,extract_text_spans(pp),sar.subject,nm,settings=sar.detection_settings)
+                    up.extend(_u)
+                    for c in _c:
+                        r=mem.get((c.text.strip().lower(),c.category.value))
+                        if r: c.status=RedactionStatus(r)
+                        nc.append(c)
+                sar.candidates=nc+[c for c in sar.candidates if c.category==PIICategory.MANUAL]
+                sar.unscreened_pages=up
+                if up: _audit("pages_unscreened", target=sar.id, detail=f"{len(up)} page(s) not screened")
+                _save(sar)
+            q.put({"done":True,"sar_id":sid,"total_candidates":len(nc)})
         except Exception as e: q.put({"error":str(e)})
     threading.Thread(target=_proc,daemon=True).start()
-    _save(sar); return jsonify({"job_id":jid})
+    return jsonify({"job_id":jid})
 @app.route("/api/sar/<sid>/document-date",methods=["POST"])
 @require_login
 def set_document_date(sid):
@@ -1907,6 +1928,8 @@ def admin_status():
         "uploads_dir_mb":round(_dir_size(UPLOAD_DIR)/1e6,1),
         "pending_jobs":len(_job_queues),
         "backup":_backup_status(),
+        "retention":{**_retention_status(),
+                     "retention_days":_get_practice_config().get("retention_days","180")},
     })
 
 @app.route("/api/admin/name-suggestions")
@@ -1949,6 +1972,16 @@ def demo_sar():
 def forbidden(e): return render_template("403.html"),403
 @app.errorhandler(404)
 def not_found(e): return render_template("403.html"),404
+
+# Start the retention sweep thread now that _delete_sar_data is defined.
+# Mirroring how _start_backup_thread is called: unconditional at import time,
+# guarded inside the function by _thread_started so repeated imports are safe.
+_start_retention_thread(
+    _get_practice_config,
+    _all,
+    _delete_sar_data,
+    lambda action, target="", detail="": _audit_event(action, target=target, detail=detail),
+)
 
 if __name__=="__main__":
     app.run(debug=False, port=int(os.environ.get("PORT", 5000)))

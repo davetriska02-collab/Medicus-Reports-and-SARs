@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.6.0] — 2026-06-11
+
+### Added
+- **GDPR automatic retention for completed SARs** — completed SARs are now automatically deleted after a configurable period (default 180 days). Deletion removes the uploaded records, redacted output documents, and the SAR record itself. Every deletion is written to the audit trail as `sar_retention_deleted`. The retention period is configurable in Settings → Workflow Settings (0 = disable automatic deletion). The `/admin/status` endpoint now includes the last sweep result and the configured retention period.
+
+### Fixed
+- **Redetect corrupt-snapshot window** — the `redetect` route previously saved the SAR twice: once in the request thread (after mutating subject details) and once inside the background detection thread (after computing new candidates). A concurrent request could read a half-updated snapshot between the two saves. The fix applies the subject-detail mutation and the initial save inside a `_mutate` lock *before* starting the thread, and wraps the background thread's final mutation+save inside its own `_mutate` lock. No synchronous save occurs after the thread is started.
+- **Duplicate OCR probe per page in detector.py** — `_page_needs_ocr` was called twice per page (once when building the page-number set, and once in the main processing loop), each call opening and closing the PDF. A pre-computed `_ocr_needed: dict[int, bool]` dict is now built once for all pages before the loop; both places read from it. Detection results are unchanged.
+
+---
+
 ## [2.5.4] — 2026-06-11
 
 ### Fixed

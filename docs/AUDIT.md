@@ -100,7 +100,8 @@ failure handling) is markedly more mature than the surrounding web tier.
   SHA-256; `release.yml` generates `SHA256SUMS` and attaches it to every release).
 - **H7 — No GDPR retention / auto-deletion.** Completed SARs (full medical records)
   are deleted only by manual admin action; the DPIA flags this as unfinished.
-  *Open — Milestone 2.* *FACT + JUDGMENT.*
+  **✅ FIXED in 2.6.0** (`sar/retention.py` background sweep; 180-day default;
+  configurable/disable-able in Settings; every deletion audited).
 - **H8 — Releases published without running tests.** **✅ FIXED in 2.5.3**
   (`pytest` gate added to `release.yml`).
 - **H9 — Unpinned deps on the system-Python install path.** **✅ FIXED in 2.5.3**
@@ -109,11 +110,14 @@ failure handling) is markedly more mature than the surrounding web tier.
 ### MEDIUM
 - Detection benchmark runs nowhere automatically — 99.4%/100% can regress
   silently. *Open — Milestone 0.*
-- `redetect_sar` double-saves the same object from request + background thread →
-  possible corrupt snapshot. *Open — Milestone 2.*
+- ~~`redetect_sar` double-saves the same object from request + background thread →
+  possible corrupt snapshot.~~ **✅ FIXED in 2.6.0** (subject-detail mutation + initial
+  save now under `_mutate` before thread start; background thread's final save also
+  under `_mutate`; no sync save after thread start).
 - God file / god function — `app.py` 91 routes; `detect_pii` 277 lines,
   `detect_names` 185 lines. *Open — Milestone 3.*
-- Double OCR-probe per page re-opens the PDF (`detector.py:275` + `:286`). *Open.*
+- ~~Double OCR-probe per page re-opens the PDF (`detector.py:275` + `:286`).~~
+  **✅ FIXED in 2.6.0** (pre-computed `_ocr_needed` dict used in both places).
 - CI actions tag-pinned not SHA-pinned; release workflow has `contents: write`.
   *Open — Milestone 3.*
 - TLS key 10-year validity; `chmod 0o600` no-ops on Windows → key world-readable.
@@ -184,9 +188,9 @@ XSS escaping, secure-cookie/session-lifetime.
 - ~~M1.4 (M): H6 — checksum-verify downloads; auto-restore backup on update failure.~~ **✅ FIXED in 2.5.4**
 
 **Milestone 2 — High-leverage**
-- M2.1 (L): H7 — configurable retention + scheduled deletion of completed SARs.
-- M2.2 (M): coverage for `app.py` admin/user routes and `pdf_parser.py`.
-- M2.3 (S): fix `redetect_sar` double-save; de-duplicate the per-page OCR probe.
+- ~~M2.1 (L): H7 — configurable retention + scheduled deletion of completed SARs.~~ **✅ FIXED in 2.6.0**
+- ~~M2.2 (M): coverage for `app.py` admin/user routes and `pdf_parser.py`.~~ **✅ DONE in 2.6.0** (`tests/test_admin_users.py`, `tests/test_pdf_parser.py`)
+- ~~M2.3 (S): fix `redetect_sar` double-save; de-duplicate the per-page OCR probe.~~ **✅ FIXED in 2.6.0**
 
 **Milestone 3 — Quality & polish**
 SHA-pin CI actions · `server_loop.bat` backoff + crash log · TLS validity +

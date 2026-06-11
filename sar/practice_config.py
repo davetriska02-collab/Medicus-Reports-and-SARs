@@ -23,6 +23,9 @@ DEFAULTS = {
     "idle_timeout_minutes": "30",
     # Two-person sign-off: "1" = require a second reviewer before finalising
     "require_second_signoff": "0",
+    # GDPR retention: automatically delete completed SARs after this many days.
+    # "0" or "" disables automatic deletion entirely.
+    "retention_days": "180",
 }
 
 

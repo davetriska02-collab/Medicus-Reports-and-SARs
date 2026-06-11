@@ -5,26 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign in — SAR Redact</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
   <div class="auth-wrap">
     <div class="auth-box">
+      <div class="auth-brand-icon">
+        <svg width="28" height="28" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 1.5L2 5v4c0 3.75 2.97 7.25 7 8 4.03-.75 7-4.25 7-8V5L9 1.5z"/>
+          <line x1="6" y1="9" x2="12" y2="9"/>
+        </svg>
+      </div>
       <div class="auth-brand">SAR Redact</div>
       <div class="auth-title">Sign in</div>
       {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
       <form method="POST" action="/login">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <div class="form-group" style="margin-bottom:12px;">
+        <div class="form-group auth-form-group">
           <label>Username</label>
           <input type="text" name="username" autofocus autocomplete="username">
         </div>
-        <div class="form-group" style="margin-bottom:20px;">
+        <div class="form-group auth-form-group">
           <label>Password</label>
           <input type="password" name="password" autocomplete="current-password">
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;">Sign in</button>
+        <button type="submit" class="btn btn-primary auth-submit">Sign in</button>
       </form>
     </div>
   </div>

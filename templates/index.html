@@ -4,20 +4,21 @@
 <style>
 .alias-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
 .alias-row  { display:flex; gap:8px; align-items:center; }
-.alias-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md); color:var(--t1); padding:7px 10px; font-size:13px; outline:none; }
-.alias-row input:focus { border-color:var(--accent); }
+.alias-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md); color:var(--t1); padding:8px 11px; font-size:13px; outline:none; height:38px; transition:border-color 0.15s,box-shadow 0.15s; }
+.alias-row input:focus { border-color:var(--accent); box-shadow:var(--ring); }
 .alias-remove { background:none; border:none; color:var(--t5); font-size:18px; line-height:1; cursor:pointer; padding:0 4px; }
 .alias-remove:hover { color:var(--red); }
-.threshold-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-.threshold-row label { font-family:var(--mono); font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--t4); width:140px; flex-shrink:0; }
-.threshold-row input[type=range] { flex:1; accent-color:var(--accent); }
-.threshold-val { font-family:var(--mono); font-size:11px; color:var(--t2); width:32px; text-align:right; }
 #progress-card { display:none; }
 </style>
 {% endblock %}
 {% block content %}
 <div class="page-header">
-  <a href="/" class="page-header-back">← Dashboard</a>
+  <a href="/" class="page-header-back">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <polyline points="8 2 3 6.5 8 11"/>
+    </svg>
+    Dashboard
+  </a>
   <h1>New Subject Access Request</h1>
   <div class="heading-rule"></div>
 </div>
@@ -31,7 +32,7 @@
   <div class="job-step" id="job-step">Initialising...</div>
 </div>
 
-<div id="main-form" style="display:grid;grid-template-columns:1fr 400px;gap:20px;align-items:start;">
+<div id="main-form" class="new-sar-layout">
   <div>
     <div class="form-card">
       <div class="form-card-title">Subject Details</div>
@@ -59,7 +60,7 @@
         </div>
         <div class="form-group form-group-wide">
           <label>Address</label>
-          <textarea id="address" name="address" rows="2" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);color:var(--t1);padding:8px 10px;font-size:13px;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+          <textarea id="address" name="address" rows="2"></textarea>
         </div>
         <div class="form-group">
           <label>Phone</label>
@@ -72,7 +73,7 @@
         <div class="form-group form-group-wide">
           <label>Aliases / previous names</label>
           <div class="alias-list" id="alias-list"></div>
-          <button type="button" class="btn btn-ghost" style="margin-top:8px;width:fit-content;font-size:11px;" onclick="addAlias()">+ Add alias</button>
+          <button type="button" class="btn btn-ghost" style="margin-top:8px;width:fit-content;font-size:12px;" onclick="addAlias()">+ Add alias</button>
         </div>
       </div>
     </div>
@@ -91,7 +92,7 @@
         </div>
         <div class="form-group form-group-wide">
           <label>Scope / clarification notes</label>
-          <textarea id="scope_notes" name="scope_notes" rows="2" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);color:var(--t1);padding:8px 10px;font-size:13px;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+          <textarea id="scope_notes" name="scope_notes" rows="2"></textarea>
         </div>
       </div>
     </div>
@@ -115,10 +116,16 @@
   <div>
     <div class="form-card" style="margin-bottom:0;">
       <div class="form-card-title">Documents</div>
-      <div class="form-card-hint">PDF, TIF, RTF, TXT, ZIP — multiple files accepted.</div>
+      <div class="form-card-hint">PDF, TIF, RTF, TXT, ZIP &mdash; multiple files accepted.</div>
       <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
         <input type="file" id="file-input" multiple accept=".pdf,.tif,.tiff,.rtf,.txt,.zip,.png,.jpg,.jpeg,.html,.cdax">
-        <div class="upload-zone-icon">⊕</div>
+        <div class="upload-zone-icon">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 24c-3.3 0-6-2.7-6-6 0-3 2.1-5.5 5-5.9C11.6 9.3 14.6 7 18 7c4.4 0 8 3.6 8 8h1c2.2 0 4 1.8 4 4s-1.8 4-4 4H12z"/>
+            <polyline points="14 20 18 16 22 20"/>
+            <line x1="18" y1="16" x2="18" y2="28"/>
+          </svg>
+        </div>
         <div class="upload-zone-text">Click to add files</div>
         <div class="upload-zone-hint">or drag and drop here</div>
       </div>
@@ -127,7 +134,7 @@
     </div>
 
     <div style="margin-top:16px;">
-      <button type="button" id="submit-btn" class="btn btn-primary" style="width:100%;padding:12px;" onclick="submitSar()">
+      <button type="button" id="submit-btn" class="btn btn-primary" style="width:100%;height:44px;font-size:14px;" onclick="submitSar()">
         Start SAR Analysis
       </button>
       <div id="submit-error" class="alert alert-error" style="display:none;margin-top:10px;"></div>

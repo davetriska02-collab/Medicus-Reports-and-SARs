@@ -229,7 +229,7 @@
       {% else %}<span class="pill pill-new">New</span>{% endif %}
     </div>
     <div class="sar-table-alloc {% if not sar.allocated_to_name %}unalloc{% endif %}">
-      {{ sar.allocated_to_name or '&mdash;' }}
+      {{ sar.allocated_to_name or '—' }}
     </div>
     <div>
       {% if sar.clock_paused %}

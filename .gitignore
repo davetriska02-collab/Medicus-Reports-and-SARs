@@ -18,3 +18,7 @@ get-pip.py
 dl_result.txt
 ex_result.txt
 pip_result.txt
+
+# Test tooling
+.coverage
+htmlcov/

@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.5.2] — 2026-06-11
+
+### Fixed
+- **Mark-fixed re-fail loop** — clicking "Mark fixed" in the guided fix queue removed the failure entry from `sar.redaction_failures` but left the original candidate in APPROVED status. Re-finalising would then re-attempt the unplaceable redaction, fail again, and re-populate the same failure — creating an infinite loop. The resolve endpoint's mark-fixed path now also sets the original candidate's status to REJECTED (with the reason annotated "Superseded by manual redaction via fix queue"), so re-finalise sees only the reviewer's manually drawn box and produces no new failures.
+- **Admin override for disclosure blocks** — practices that have manually checked the disclosed output documents are no longer hard-locked out of the print bundle or response pack. Admins can now confirm an override (surfaced via a browser confirm dialog when a 409 is returned), which proceeds despite outstanding failures or a pending re-finalise. The override is audited (`print_bundle_override` / `response_pack_override`) and the certificate of redaction honestly states "N redaction(s) could not be machine-verified as applied. The authorised signatory has manually verified the disclosed documents before release." instead of the normal machine-verification confirmation. Non-admin override attempts return 403.
+
+---
+
 ## [2.5.1] — 2026-06-11
 
 ### Added

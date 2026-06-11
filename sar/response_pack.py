@@ -266,13 +266,20 @@ def generate_acknowledgment(sar, cfg: dict, output_dir: str) -> str:
 
 
 def generate_certificate(sar, cfg: dict, output_dir: str,
-                         page_counts: dict | None = None) -> str:
+                         page_counts: dict | None = None,
+                         manual_verification_note: int = 0) -> str:
     """Certificate of redaction with category and exemption breakdowns.
 
     Caller must ensure there are no failed redactions before calling —
     this document certifies that approved redactions were applied.
+
+    When manual_verification_note > 0, the caller has invoked an admin
+    override: N redactions could not be machine-verified.  Section 4 is
+    replaced with an honest statement and the failed candidates' texts are
+    NOT printed (they may be the very third-party data being protected).
+    This variant must only be generated under an explicit admin override.
     """
-    if getattr(sar, "redaction_failures", []):
+    if getattr(sar, "redaction_failures", []) and not manual_verification_note:
         raise ValueError("Cannot certify: approved redactions failed to apply")
 
     os.makedirs(output_dir, exist_ok=True)
@@ -325,10 +332,17 @@ def generate_certificate(sar, cfg: dict, output_dir: str,
     w.gap(8)
 
     w.line("4. Verification", size=11, bold=True)
-    w.wrapped(
-        "All redactions approved during review were verified as applied to "
-        "the output documents. The accompanying redaction log records each "
-        "individual decision, including detections reviewed and not redacted.")
+    if manual_verification_note:
+        n = manual_verification_note
+        w.wrapped(
+            f"{n} redaction(s) could not be machine-verified as applied. "
+            "The authorised signatory has manually verified the disclosed "
+            "documents before release.")
+    else:
+        w.wrapped(
+            "All redactions approved during review were verified as applied to "
+            "the output documents. The accompanying redaction log records each "
+            "individual decision, including detections reviewed and not redacted.")
     w.gap(16)
 
     w.line("Authorised by:", size=10, bold=True)

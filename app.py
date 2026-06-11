@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.5.1"
+APP_VERSION = "2.5.2"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -1114,23 +1114,40 @@ def generate_response_pack(sid):
     if not sar: return jsonify({"error":"Not found"}),404
     if sar.status!="complete":
         return jsonify({"error":"Finalise the SAR before generating the response pack"}),400
-    if getattr(sar,"redaction_failures",[]):
-        return jsonify({"error":f"{len(sar.redaction_failures)} approved redaction(s) failed to apply — "
-                        "resolve them (manual redaction + re-finalise) before generating "
-                        "the response pack"}),409
-    if getattr(sar,"needs_refinalise",False):
-        return jsonify({"error":"Manual fixes recorded — re-finalise to apply them before generating disclosure documents"}),409
+    body=request.get_json(silent=True) or {}
+    override=bool(body.get("override",False))
+    failures=getattr(sar,"redaction_failures",[])
+    needs_ref=getattr(sar,"needs_refinalise",False)
+    if failures:
+        if not override:
+            return jsonify({"error":f"{len(failures)} approved redaction(s) failed to apply — "
+                            "resolve them (manual redaction + re-finalise) before generating "
+                            "the response pack"}),409
+        if g.current_user.role!="admin":
+            return jsonify({"error":"Only an admin can override disclosure blocks"}),403
+    if needs_ref:
+        if not override:
+            return jsonify({"error":"Manual fixes recorded — re-finalise to apply them before generating disclosure documents"}),409
+        if g.current_user.role!="admin":
+            return jsonify({"error":"Only an admin can override disclosure blocks"}),403
     od=os.path.join(OUTPUT_DIR,sid)
     if not os.path.isdir(od): return jsonify({"error":"No output files — finalise first"}),400
     cfg=_get_practice_config()
-    custom=(request.json or {}).get("custom_paragraph","")
+    custom=body.get("custom_paragraph","")
     try:
         page_counts={os.path.basename(p):get_page_count(p) for p in sar.pdf_files if os.path.exists(p)}
         letter=generate_cover_letter(sar,cfg,od,custom_paragraph=custom)
-        cert=generate_certificate(sar,cfg,od,page_counts=page_counts)
+        if override and failures:
+            cert=generate_certificate(sar,cfg,od,page_counts=page_counts,
+                                      manual_verification_note=len(failures))
+        else:
+            cert=generate_certificate(sar,cfg,od,page_counts=page_counts)
     except Exception as e:
         log.exception("Response pack generation failed for SAR %s",sid)
         return jsonify({"error":f"Response pack generation failed: {e}"}),500
+    if override:
+        _audit("response_pack_override",target=sid,
+               detail=f"{len(failures)} outstanding failure(s); needs_refinalise={needs_ref}")
     _audit("response_pack_generated",target=sid,detail=sar.subject.full_name)
     return jsonify({"ok":True,"files":[os.path.basename(letter),os.path.basename(cert)]})
 @app.route("/api/sar/<sid>/print-bundle",methods=["POST"])
@@ -1141,11 +1158,21 @@ def generate_print_bundle(sid):
     if not sar: return jsonify({"error":"Not found"}),404
     if sar.status!="complete":
         return jsonify({"error":"Finalise the SAR before building the print bundle"}),400
-    if getattr(sar,"redaction_failures",[]):
-        return jsonify({"error":f"{len(sar.redaction_failures)} approved redaction(s) failed to apply — "
-                        "resolve them before printing for disclosure"}),409
-    if getattr(sar,"needs_refinalise",False):
-        return jsonify({"error":"Manual fixes recorded — re-finalise to apply them before generating disclosure documents"}),409
+    body=request.get_json(silent=True) or {}
+    override=bool(body.get("override",False))
+    failures=getattr(sar,"redaction_failures",[])
+    needs_ref=getattr(sar,"needs_refinalise",False)
+    if failures:
+        if not override:
+            return jsonify({"error":f"{len(failures)} approved redaction(s) failed to apply — "
+                            "resolve them before printing for disclosure"}),409
+        if g.current_user.role!="admin":
+            return jsonify({"error":"Only an admin can override disclosure blocks"}),403
+    if needs_ref:
+        if not override:
+            return jsonify({"error":"Manual fixes recorded — re-finalise to apply them before generating disclosure documents"}),409
+        if g.current_user.role!="admin":
+            return jsonify({"error":"Only an admin can override disclosure blocks"}),403
     od=os.path.join(OUTPUT_DIR,sid)
     if not os.path.isdir(od): return jsonify({"error":"No output files — finalise first"}),400
     try:
@@ -1155,6 +1182,9 @@ def generate_print_bundle(sid):
     except Exception as e:
         log.exception("Print bundle failed for SAR %s",sid)
         return jsonify({"error":f"Print bundle failed: {e}"}),500
+    if override:
+        _audit("print_bundle_override",target=sid,
+               detail=f"{len(failures)} outstanding failure(s); needs_refinalise={needs_ref}")
     _audit("print_bundle_generated",target=sid,
            detail=f"{len(names)} part(s): "+", ".join(names))
     return jsonify({"ok":True,"files":names})
@@ -1276,6 +1306,17 @@ def resolve_failure(sid, cand_id):
         # When dismissed, reject the candidate so re-finalise won't attempt it again
         for c in sar.candidates:
             if c.id == cand_id:
+                c.status = RedactionStatus.REJECTED
+                break
+    else:
+        # Mark-fixed path: the reviewer has drawn a manual box as a replacement.
+        # Reject the original unplaceable candidate so re-finalise does not
+        # attempt it again (which would re-populate the same failure).
+        # Preserve the original reason by appending to it.
+        for c in sar.candidates:
+            if c.id == cand_id:
+                supersede_note = "Superseded by manual redaction via fix queue"
+                c.reason = (f"{c.reason}; {supersede_note}" if c.reason else supersede_note)
                 c.status = RedactionStatus.REJECTED
                 break
     _save(sar)

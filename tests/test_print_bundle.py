@@ -90,6 +90,64 @@ def test_bundle_requires_finalise_and_blocks_on_failures(flask_app, admin_client
 
     sar2 = _make_sar(flask_app, with_failure=True)
     c.post(f"/api/sar/{sar2.id}/finalise", headers=H)
-    r = c.post(f"/api/sar/{sar2.id}/print-bundle", headers=H)
+    r = c.post(f"/api/sar/{sar2.id}/print-bundle", headers=H, json={})
     assert r.status_code == 409
     assert "failed" in r.get_json()["error"]
+
+
+# ── Override tests ─────────────────────────────────────────────────────────────
+
+def test_bundle_override_admin_with_failure_returns_200(flask_app, admin_client):
+    """Admin + override:true succeeds despite outstanding failure; audit event present."""
+    c, H = admin_client
+    sar = _make_sar(flask_app, with_failure=True)
+    c.post(f"/api/sar/{sar.id}/finalise", headers=H)
+
+    r = c.post(f"/api/sar/{sar.id}/print-bundle", headers=H,
+               json={"override": True})
+    assert r.status_code == 200, r.get_json()
+    files = r.get_json()["files"]
+    assert len(files) >= 1
+
+    od = os.path.join(flask_app.OUTPUT_DIR, sar.id)
+    assert os.path.exists(os.path.join(od, files[0])), "Bundle file must exist on disk"
+
+    # Audit event for print_bundle_override must be present
+    from sar.audit import read_events as _audit_read
+    events = _audit_read(limit=50)
+    assert any(e["action"] == "print_bundle_override" for e in events), (
+        "Expected print_bundle_override audit event")
+
+
+def test_bundle_override_non_admin_returns_403(flask_app, admin_client):
+    """Non-admin override attempt returns 403."""
+    import re
+    from sar.users import create_user as _create_user, get_user_by_username as _get_by_un
+
+    # Create a GP user if it doesn't exist
+    if not _get_by_un("gpreview"):
+        _create_user("gpreview", "GP User", "gp", "password123")
+
+    c_gp = flask_app.app.test_client()
+    pw = "password123"
+    def _token(resp):
+        m = (re.search(rb'name="_csrf_token" value="([^"]+)"', resp.data) or
+             re.search(rb'name="csrf-token" content="([^"]+)"', resp.data))
+        assert m, "no CSRF token found"
+        return m.group(1).decode()
+
+    r = c_gp.get("/login")
+    c_gp.post("/login", data={"_csrf_token": _token(r), "username": "gpreview",
+                               "password": pw})
+    r2 = c_gp.get("/")
+    H_gp = {"X-CSRF-Token": _token(r2)}
+
+    # Build a SAR with failure (using admin client) so GP can attempt override
+    c_admin, H_admin = admin_client
+    sar = _make_sar(flask_app, with_failure=True)
+    c_admin.post(f"/api/sar/{sar.id}/finalise", headers=H_admin)
+
+    r3 = c_gp.post(f"/api/sar/{sar.id}/print-bundle", headers=H_gp,
+                   json={"override": True})
+    assert r3.status_code == 403, f"Expected 403 for non-admin override, got {r3.status_code}"
+    assert "admin" in r3.get_json()["error"].lower()

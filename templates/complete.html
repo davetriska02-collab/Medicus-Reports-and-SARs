@@ -254,34 +254,62 @@ function loadOutputs() {
 }
 loadOutputs();
 
-function generatePack() {
+function generatePack(override) {
   const btn = document.getElementById('pack-btn');
   btn.disabled = true; btn.textContent = 'Generating…';
+  const body = { custom_paragraph: document.getElementById('pack-custom').value };
+  if (override) body.override = true;
   fetch('/api/sar/' + SAR_ID + '/response-pack', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ custom_paragraph: document.getElementById('pack-custom').value })
+    body: JSON.stringify(body)
   })
-    .then(r => r.json().then(d => ({ ok: r.ok, d })))
-    .then(({ ok, d }) => {
-      if (!ok) throw new Error(d.error || 'Generation failed');
+    .then(r => r.json().then(d => ({ status: r.status, ok: r.ok, d })))
+    .then(({ status, ok, d }) => {
+      if (!ok) {
+        if (status === 409 && !override) {
+          const proceed = confirm(
+            (d.error || 'Generation blocked') +
+            '\n\nOnly proceed if you have manually checked the output documents — ' +
+            'this override is recorded in the audit log.\n\nProceed anyway?'
+          );
+          if (proceed) { generatePack(true); return; }
+          throw new Error('Cancelled');
+        }
+        throw new Error(d.error || 'Generation failed');
+      }
       const st = document.getElementById('pack-status');
       st.textContent = '✓ Cover letter and certificate added to output files';
       st.style.display = 'inline';
       loadOutputs();
     })
-    .catch(e => alert(e.message))
+    .catch(e => { if (e.message !== 'Cancelled') alert(e.message); })
     .finally(() => { btn.disabled = false; btn.textContent = 'Generate response pack'; });
 }
 
 function downloadAll() { window.location.href = '/api/sar/' + SAR_ID + '/download-all'; }
 
-function buildBundle() {
+function buildBundle(override) {
   const btn = document.getElementById('bundle-btn');
   btn.disabled = true; btn.textContent = 'Building…';
-  fetch('/api/sar/' + SAR_ID + '/print-bundle', { method: 'POST', headers: {'Content-Type': 'application/json'} })
-    .then(r => r.json().then(d => ({ ok: r.ok, d })))
-    .then(({ ok, d }) => {
-      if (!ok) throw new Error(d.error || 'Bundle failed');
+  const body = override ? { override: true } : {};
+  fetch('/api/sar/' + SAR_ID + '/print-bundle', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  })
+    .then(r => r.json().then(d => ({ status: r.status, ok: r.ok, d })))
+    .then(({ status, ok, d }) => {
+      if (!ok) {
+        if (status === 409 && !override) {
+          const proceed = confirm(
+            (d.error || 'Bundle blocked') +
+            '\n\nOnly proceed if you have manually checked the output documents — ' +
+            'this override is recorded in the audit log.\n\nProceed anyway?'
+          );
+          if (proceed) { buildBundle(true); return; }
+          throw new Error('Cancelled');
+        }
+        throw new Error(d.error || 'Bundle failed');
+      }
       const st = document.getElementById('bundle-status');
       st.textContent = d.files.length === 1
         ? '✓ Combined PDF ready — one print job'
@@ -289,7 +317,7 @@ function buildBundle() {
       st.style.display = 'inline';
       loadOutputs();
     })
-    .catch(e => alert(e.message))
+    .catch(e => { if (e.message !== 'Cancelled') alert(e.message); })
     .finally(() => { btn.disabled = false; btn.textContent = '🖨 Build print bundle'; });
 }
 

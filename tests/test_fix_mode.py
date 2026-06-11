@@ -249,3 +249,57 @@ def test_review_page_with_fix_all_returns_200(flask_app, admin_client):
     html = r.data.decode()
     assert "REDACTION_FAILURES" in html
     assert "NotFindableAnywhere Xyz" in html
+
+
+# ── 7. Regression: mark-fixed re-fail loop ────────────────────────────────────
+
+def test_mark_fixed_does_not_re_fail_on_refinalise(flask_app, admin_client):
+    """Full reported flow: unplaceable candidate → finalise (1 failure) →
+    resolve mark-fixed → add manual approved box → re-finalise → no failures."""
+    from sar.models import (RedactionCandidate, PIICategory, RedactionStatus)
+    c, H = admin_client
+    sar = _make_sar(flask_app, with_failure=True)
+
+    # Step 1: finalise — expect exactly 1 failure
+    r = c.post(f"/api/sar/{sar.id}/finalise", headers=H)
+    assert r.status_code == 200
+    failures = r.get_json()["failed_redactions"]
+    assert len(failures) == 1, f"Expected 1 failure, got {failures}"
+    cand_id = failures[0]["id"]
+
+    # Step 2: resolve via mark-fixed (not dismissed)
+    r2 = c.post(f"/api/sar/{sar.id}/failures/{cand_id}/resolve", headers=H, json={})
+    assert r2.status_code == 200
+
+    # Confirm the original candidate is now REJECTED (not still APPROVED)
+    sar_r = flask_app._get(sar.id)
+    orig = next((c for c in sar_r.candidates if c.id == cand_id), None)
+    assert orig is not None, "Original candidate should still exist"
+    assert orig.status.value == "rejected", (
+        f"Expected status 'rejected', got {orig.status.value!r} — re-fail loop fix not applied")
+    assert "Superseded" in orig.reason, f"Reason not updated: {orig.reason!r}"
+
+    # Step 3: add a manual approved candidate with valid coordinates (simulates drawn box)
+    manual = RedactionCandidate(
+        text="[Manual redaction]", category=PIICategory.MANUAL,
+        status=RedactionStatus.APPROVED, confidence=1.0,
+        page_num=0, x0=50, y0=90, x1=200, y1=110,
+        source_file="record.pdf", reason="Manually drawn redaction")
+    sar_r.candidates.append(manual)
+    flask_app._save(sar_r)
+
+    # Step 4: re-finalise — must produce zero failures
+    r3 = c.post(f"/api/sar/{sar.id}/finalise", headers=H)
+    assert r3.status_code == 200
+    data = r3.get_json()
+    assert data["failed_redactions"] == [], (
+        f"Re-fail loop still present — got failures: {data['failed_redactions']}")
+
+    sar_r2 = flask_app._get(sar.id)
+    assert getattr(sar_r2, "redaction_failures", []) == []
+    assert getattr(sar_r2, "needs_refinalise", True) is False
+
+    # Step 5: print-bundle must now return 200 (unblocked)
+    r4 = c.post(f"/api/sar/{sar.id}/print-bundle", headers=H)
+    assert r4.status_code == 200, (
+        f"Print bundle still blocked after clean re-finalise: {r4.get_json()}")

@@ -161,35 +161,32 @@ def test_urgency_strip_overdue_and_due3(flask_app, admin_client):
     assert sar_overdue.subject.full_name in body or sar_overdue.id[:8] in body
 
 
-def test_urgency_strip_hidden_when_all_safe(flask_app, admin_client):
-    """When no urgent SARs exist, the urgency strip div is absent."""
-    c, H = admin_client
-    # Mark any existing active SARs as complete or archived to clear the slate
-    # (we cannot easily clear global state, so just check count logic via template var)
-    r = c.get("/")
-    assert r.status_code == 200
-    # The strip only renders when overdue_count_strip + due3_count > 0
-    # This test mostly ensures the template renders without errors
+def _strip_html(body):
+    """Return only the urgency-strip div's markup, or '' if absent."""
+    start = body.find('id="urgency-strip"')
+    if start == -1:
+        return ""
+    # The strip is a single <div>…</div>; grab a generous slice from its open.
+    open_tag = body.rfind("<div", 0, start)
+    return body[open_tag:start + 4000]
 
 
 def test_urgency_strip_excludes_complete_and_paused(flask_app, admin_client):
-    """Complete and clock-paused SARs are excluded from urgency strip."""
+    """Complete and clock-paused overdue SARs never appear in the urgency strip."""
     c, H = admin_client
-    # Paused SAR overdue
     sar_paused = _make_sar(flask_app, days_offset=-3)
     sar_paused.clock_paused = True
     flask_app._save(sar_paused)
-    # Complete SAR overdue
     sar_complete = _make_sar(flask_app, days_offset=-3)
     sar_complete.status = "complete"
     flask_app._save(sar_complete)
-    r = c.get("/")
-    assert r.status_code == 200
-    body = r.data.decode()
-    # Paused SAR name must not appear in urgency strip (it may still appear in table)
-    # We check the strip section specifically by looking for the strip div id
-    # The best we can do is ensure the page renders and the overdue_count_strip
-    # does not include paused/complete SARs — verified via route logic
+
+    body = c.get("/").data.decode()
+    strip = _strip_html(body)
+    # Neither the paused nor the completed SAR may be listed as urgent. Subject
+    # names collide across fixtures ("Test Subject"), so assert on the unique id.
+    assert sar_paused.id[:8] not in strip
+    assert sar_complete.id[:8] not in strip
 
 
 # ── Part 4: Two-person sign-off ───────────────────────────────────────────────

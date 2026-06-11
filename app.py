@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, send_file,
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
-APP_VERSION = "2.5.2"
+APP_VERSION = "2.5.3"
 
 from sar.updater import start as _start_update_check, get_result as _get_update_result
 from sar.practice_config import get_config as _get_practice_config, save_config as _save_practice_config, is_default as _practice_is_default
@@ -75,12 +75,16 @@ def _get_or_create_secret_key():
 app.secret_key = _get_or_create_secret_key()
 
 # ── Cookie security ────────────────────────────────────────────────────────
+# SECURE is auto-enabled under TLS (serve.py sets SAR_TLS=1 when it finds a
+# cert); set SAR_COOKIE_SECURE=1 to force it on behind a TLS-terminating proxy.
+_cookie_secure = (os.environ.get("SAR_COOKIE_SECURE", "").strip() == "1"
+                  or os.environ.get("SAR_TLS", "").strip() == "1")
 app.config.update(
     SESSION_COOKIE_HTTPONLY  = True,
     SESSION_COOKIE_SAMESITE  = 'Strict',
-    SESSION_COOKIE_SECURE    = False,   # Set True when deploying with HTTPS
+    SESSION_COOKIE_SECURE    = _cookie_secure,
     SESSION_COOKIE_NAME      = 'sar_session',
-    PERMANENT_SESSION_LIFETIME = 28800, # 8 hours
+    PERMANENT_SESSION_LIFETIME = 28800, # 8 hours (enforced: login sets session.permanent)
     MAX_CONTENT_LENGTH       = 1024 * 1024 * 1024,  # 1 GB request cap
 )
 
@@ -574,6 +578,20 @@ def _csrf_protect():
             return jsonify({'error': 'CSRF validation failed'}), 403
         return render_template('403.html'), 403
 
+@app.after_request
+def _security_headers(resp):
+    """Defence-in-depth headers for a multi-user LAN deployment.
+    CSP allows inline scripts/styles because the templates rely on them;
+    it still blocks cross-origin script/object sources and framing."""
+    resp.headers.setdefault('X-Frame-Options', 'DENY')
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('Referrer-Policy', 'same-origin')
+    resp.headers.setdefault('Content-Security-Policy',
+        "default-src 'self'; img-src 'self' data:; "
+        "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "frame-ancestors 'none'; object-src 'none'; base-uri 'self'")
+    return resp
+
 # ── Login rate limiting ────────────────────────────────────────────────────
 # Sliding window per (client IP, username): 5 failures in 5 minutes locks
 # further attempts for the remainder of the window.
@@ -623,6 +641,7 @@ def login():
         u=authenticate(un,request.form.get("password",""))
         if u:
             _login_clear(ip,un)
+            session.permanent=True   # apply PERMANENT_SESSION_LIFETIME (8h absolute cap)
             session["user_id"]=u.id
             log.info("Login: %s from %s", un, ip)
             _audit_event("login", user_id=u.id, username=u.username, ip=ip)

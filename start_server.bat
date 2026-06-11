@@ -189,19 +189,19 @@ if not exist "%ROOT%venv\Scripts\python.exe" (
     echo  ------------------------------------------------
     echo.
     echo  [1/6] Installing Flask...
-    "%ROOT%venv\Scripts\pip" install flask --quiet --no-warn-script-location
+    "%ROOT%venv\Scripts\pip" install flask==3.1.2 --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: Flask install failed. & pause & exit /b 1 )
     echo  [1/6] Done.
     echo  [2/6] Installing Waitress...
-    "%ROOT%venv\Scripts\pip" install waitress --quiet --no-warn-script-location
+    "%ROOT%venv\Scripts\pip" install waitress==3.0.2 --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: Waitress install failed. & pause & exit /b 1 )
     echo  [2/6] Done.
     echo  [3/6] Installing striprtf...
-    "%ROOT%venv\Scripts\pip" install striprtf --quiet --no-warn-script-location
+    "%ROOT%venv\Scripts\pip" install striprtf==0.0.29 --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: striprtf install failed. & pause & exit /b 1 )
     echo  [3/6] Done.
     echo  [4/6] Installing PyMuPDF (~2-5 min)...
-    "%ROOT%venv\Scripts\pip" install pymupdf --quiet --no-warn-script-location
+    "%ROOT%venv\Scripts\pip" install pymupdf==1.26.4 --quiet --no-warn-script-location
     if errorlevel 1 ( echo  ERROR: PyMuPDF install failed. & pause & exit /b 1 )
     echo  [4/6] Done.
     echo  [5/6] Installing python-docx (DOCX support)...

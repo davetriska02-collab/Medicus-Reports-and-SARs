@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.5.3] — 2026-06-11
+
+### Fixed
+- **Critical: review screen JavaScript was broken by an orphaned `<script>` tag** (`templates/review.html`). Six page globals (file lists, main record, admin flag, current user) rendered as text instead of executing, breaking the file selector, PDF-viewer bootstrap, and admin gating. Introduced in v2.5.1 and missed because nothing tested template rendering. A new static test suite (`tests/test_html_templates.py`) now fails the build on unbalanced script tags or stranded `window.*` assignments across every template.
+
+### Security
+- **HTTP security headers** added on every response (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and a Content-Security-Policy with `frame-ancestors 'none'` / `object-src 'none'`) — defence-in-depth against clickjacking and MIME-sniffing on shared practice networks.
+- **Stored-XSS hardening on the Settings page** — staff names, custom words, and dictionary suggestions are now HTML-escaped before display, and their action buttons read values from `data-` attributes instead of inline string interpolation.
+- **Secure session cookies under TLS** — `SESSION_COOKIE_SECURE` is now enabled automatically when serving HTTPS and can be forced on behind a TLS-terminating proxy via `SAR_COOKIE_SECURE=1`. Login now marks the session permanent so the intended 8-hour absolute lifetime is actually enforced.
+
+### Changed
+- **Releases now run the full test suite before publishing** (`.github/workflows/release.yml`) — a failing suite blocks the release.
+- **Pinned the four previously-unpinned packages** on the system-Python (venv) install path in `start_server.bat`, matching the embedded-Python path and `requirements.txt`.
+- Added `docs/AUDIT.md` — a full principal-level audit of the codebase with severity-rated findings and a milestone task plan.
+
+---
+
 ## [2.5.2] — 2026-06-11
 
 ### Fixed

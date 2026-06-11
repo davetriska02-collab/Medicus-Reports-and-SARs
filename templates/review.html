@@ -275,7 +275,6 @@ function clearSignoff() {
     .then(r => r.json())
     .then(d => { if (d.ok) location.reload(); else alert(d.error || 'Clear failed.'); });
 }
-</script>
 window.FILES_DATE = {{ files_info_date | tojson }};
 window.FILES_FILE = {{ files_info_file | tojson }};
 window.MAIN_RECORD = "{{ main_record_file }}";

@@ -139,6 +139,13 @@
 
 {% block extra_scripts %}
 <script>
+// Escape server-supplied text before it reaches innerHTML (staff/word/dict
+// names are user-entered and could otherwise inject script).
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 {% if current_user and current_user.role == 'admin' %}
 function saveWorkflowSettings() {
   const val = document.getElementById('cfg-second-signoff').checked ? '1' : '0';
@@ -194,10 +201,10 @@ function loadStaff() {
     el.innerHTML = list.map(s => `
       <div class="settings-item">
         <div>
-          <div class="settings-item-label">${s.name}</div>
-          ${s.role ? `<div class="settings-item-meta">${s.role}</div>` : ''}
+          <div class="settings-item-label">${esc(s.name)}</div>
+          ${s.role ? `<div class="settings-item-meta">${esc(s.role)}</div>` : ''}
         </div>
-        <button class="btn-sm" style="color:var(--red);" onclick="removeStaff('${s.name.replace(/'/g,"\\'")}')">Remove</button>
+        <button class="btn-sm" style="color:var(--red);" data-name="${esc(s.name)}" onclick="removeStaff(this.dataset.name)">Remove</button>
       </div>`).join('');
   });
 }
@@ -220,10 +227,10 @@ function loadWords() {
     el.innerHTML = list.map(w => `
       <div class="settings-item">
         <div>
-          <div class="settings-item-label" style="font-family:var(--mono);font-size:12px;">${w.phrase}</div>
+          <div class="settings-item-label" style="font-family:var(--mono);font-size:12px;">${esc(w.phrase)}</div>
           ${w.case_sensitive ? '<div class="settings-item-meta">Case-sensitive</div>' : ''}
         </div>
-        <button class="btn-sm" style="color:var(--red);" onclick="removeWord('${w.phrase.replace(/'/g,"\\'")}')">Remove</button>
+        <button class="btn-sm" style="color:var(--red);" data-phrase="${esc(w.phrase)}" onclick="removeWord(this.dataset.phrase)">Remove</button>
       </div>`).join('');
   });
 }
@@ -263,12 +270,12 @@ function loadDictSuggestions() {
     const tb = document.getElementById('dict-tbody');
     tb.innerHTML = list.map(s => `
       <tr style="border-bottom:1px solid var(--border-light,#f0f0f0);">
-        <td style="padding:7px 10px 7px 0;font-family:var(--mono);font-size:12px;">${s.name}</td>
-        <td style="padding:7px 10px;color:var(--t3);">${s.count}</td>
-        <td style="padding:7px 10px;color:var(--t4);font-size:12px;">${(s.examples||[]).join('; ')}</td>
+        <td style="padding:7px 10px 7px 0;font-family:var(--mono);font-size:12px;">${esc(s.name)}</td>
+        <td style="padding:7px 10px;color:var(--t3);">${esc(s.count)}</td>
+        <td style="padding:7px 10px;color:var(--t4);font-size:12px;">${esc((s.examples||[]).join('; '))}</td>
         <td style="padding:7px 0;text-align:right;white-space:nowrap;">
-          <button class="btn-sm" style="margin-right:6px;" onclick="dictAccept('${s.name.replace(/'/g,"\\'")}')">Add to dictionary</button>
-          <button class="btn-sm" style="color:var(--t4);" onclick="dictDismiss('${s.name.replace(/'/g,"\\'")}')">Dismiss</button>
+          <button class="btn-sm" style="margin-right:6px;" data-name="${esc(s.name)}" onclick="dictAccept(this.dataset.name)">Add to dictionary</button>
+          <button class="btn-sm" style="color:var(--t4);" data-name="${esc(s.name)}" onclick="dictDismiss(this.dataset.name)">Dismiss</button>
         </td>
       </tr>`).join('');
   }).catch(() => {

@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.5.1] — 2026-06-11
+
+### Added
+- **Guided fix queue for unplaced redactions** — when finalise reports that approved redactions could not be placed, the warning now leads straight into a fix queue instead of leaving the reviewer to hunt through hundreds of documents. Each failure automatically opens the right file at the right page with draw mode armed, shows the surrounding context sentence, and flashes a highlight over the text when it can be located. "Mark fixed" advances the queue; "Dismiss" requires confirmation and is audited. Per-failure "Fix →" links and a "Fix all" button on the completion screen provide the same queue.
+- **Re-finalise guard** — resolving or dismissing failures can no longer unblock the disclosure documents on its own: the certificate of redaction and print bundle stay blocked (with a clear message) until the SAR is re-finalised so the manual redaction boxes are actually applied to the output PDFs.
+
+---
+
 ## [2.5.0] — 2026-06-10
 
 ### Added

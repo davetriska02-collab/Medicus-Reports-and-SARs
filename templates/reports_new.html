@@ -26,10 +26,10 @@
   <div class="job-step" id="job-step">Initialising...</div>
 </div>
 
-<div id="step1" class="form-card">
-  <div class="form-card-title">Step 1 — Select template</div>
+<section id="step1">
+  <div class="section-head" style="margin-bottom:14px;">Select template</div>
   <input type="hidden" id="selected-template" name="template_id">
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px;">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">
     {% for t in templates %}
     <div class="template-card" data-tid="{{ t.id }}" onclick="selectTemplate('{{ t.id }}', '{{ t.name|e }}')">
       <div class="template-cat">{{ t.category }}</div>
@@ -38,7 +38,7 @@
     </div>
     {% endfor %}
   </div>
-</div>
+</section>
 
 <div id="step2" class="form-card">
   <div class="form-card-title">Step 2 — Patient details</div>

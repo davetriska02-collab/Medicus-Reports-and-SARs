@@ -22,7 +22,7 @@ if (!baseUrl || !outDir) {
 (async () => {
   fs.mkdirSync(outDir, { recursive: true });
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, locale: 'en-GB' });
   const shot = (name) => page.screenshot({ path: `${outDir}/${name}.png` });
   const goto = (path) => page.goto(`${baseUrl}${path}`, { waitUntil: 'networkidle' });
 

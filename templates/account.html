@@ -9,7 +9,7 @@
 {% if error %}<div class="alert alert-error" style="max-width:440px;">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success" style="max-width:440px;">{{ success }}</div>{% endif %}
 
-<div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;max-width:700px;">
+<div class="account-grid">
   <div class="card">
     <div class="card-body">
       <div class="mono-label" style="margin-bottom:8px;">Signed in as</div>
@@ -17,7 +17,7 @@
       <div style="font-family:var(--mono);font-size:11px;color:var(--t4);margin-bottom:10px;">{{ current_user.username }}</div>
       {% if current_user.role == 'admin' %}<span class="pill pill-admin">Admin</span>
       {% else %}<span class="pill pill-gp">GP</span>{% endif %}
-      {% if current_user.is_superuser %}<span class="pill pill-complete" style="margin-left:4px;">Superuser</span>{% endif %}
+      {% if current_user.is_superuser %}<span class="pill pill-superuser" style="margin-left:4px;">Superuser</span>{% endif %}
     </div>
   </div>
 

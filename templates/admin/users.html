@@ -59,11 +59,11 @@
     </div>
     {% if u.role == 'admin' %}<span class="pill pill-admin">Admin</span>
     {% else %}<span class="pill pill-gp">GP</span>{% endif %}
-    {% if u.is_superuser %}<span class="pill pill-complete">Superuser</span>{% endif %}
+    {% if u.is_superuser %}<span class="pill pill-superuser">Superuser</span>{% endif %}
     <div style="display:flex;gap:6px;">
-      <button class="btn-sm" onclick="resetPassword('{{ u.id }}', '{{ u.display_name }}')">Reset pw</button>
+      <button class="btn-sm" onclick="resetPassword('{{ u.id }}', '{{ u.display_name }}')">Reset password</button>
       {% if not u.is_superuser %}
-      <button class="btn-sm" style="color:var(--red);" onclick="deleteUser('{{ u.id }}', '{{ u.display_name }}')">Delete</button>
+      <button class="btn-sm-danger" onclick="deleteUser('{{ u.id }}', '{{ u.display_name }}')">Delete</button>
       {% endif %}
     </div>
   </div>

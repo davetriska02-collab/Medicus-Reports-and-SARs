@@ -119,15 +119,15 @@
   </div>
   <div class="stat-card">
     <div class="stat-card-label">In Review</div>
-    <div class="stat-card-value reviewing">{{ reviewing_count }}</div>
+    <div class="stat-card-value{% if reviewing_count %} reviewing{% endif %}">{{ reviewing_count }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-card-label">Complete</div>
-    <div class="stat-card-value complete">{{ complete_count }}</div>
+    <div class="stat-card-value{% if complete_count %} complete{% endif %}">{{ complete_count }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-card-label">Overdue</div>
-    <div class="stat-card-value overdue">{{ overdue_count }}</div>
+    <div class="stat-card-value{% if overdue_count %} overdue{% endif %}">{{ overdue_count }}</div>
   </div>
 </div>
 {% endif %}
@@ -245,15 +245,15 @@
       {% endif %}
     </div>
     <div>
-      {% if sar.workflow_status == 'ready_for_signoff' %}<span class="pill pill-signoff">Sign-off</span>
-      {% elif sar.workflow_status == 'complete' %}<span class="pill pill-complete">Done</span>
-      {% elif sar.workflow_status == 'in_review' %}<span class="pill pill-reviewing">In Review</span>
-      {% else %}<span class="pill pill-new">New</span>{% endif %}
+      {% if sar.workflow_status == 'ready_for_signoff' %}<span class="workflow-text">Sign-off</span>
+      {% elif sar.workflow_status == 'complete' %}<span class="workflow-text">Done</span>
+      {% elif sar.workflow_status == 'in_review' %}<span class="workflow-text">In Review</span>
+      {% else %}<span class="workflow-text">New</span>{% endif %}
     </div>
     <div class="sar-actions">
       <a href="/review/{{ sar.id }}" class="btn-sm">Review</a>
       {% if current_user and current_user.role == 'admin' %}
-      <button class="btn-sm" style="color:var(--red);" onclick="deleteSar('{{ sar.id }}', '{{ sar.subject.full_name or '' }}')">Delete</button>
+      <button class="btn-sm-danger" onclick="deleteSar('{{ sar.id }}', '{{ sar.subject.full_name or '' }}')">Delete</button>
       {% endif %}
     </div>
   </div>

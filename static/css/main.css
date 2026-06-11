@@ -203,6 +203,10 @@ h2 { font-size: 15px; font-weight: 600; color: var(--t2); }
 .pill-paused   { color: var(--t3);     background: rgba(93,122,157,0.12); border-color: var(--border-hi); }
 .pill-admin    { color: var(--green);  background: var(--green-d);  border-color: rgba(74,222,128,0.3); }
 .pill-gp       { color: var(--accent); background: var(--blue-d);   border-color: rgba(79,138,209,0.4); }
+/* P1-1: neutral chip variant for audit action labels */
+.pill-neutral  { color: var(--t3); background: transparent; border-color: var(--border-hi); }
+/* P3-16: superuser role pill — same palette as admin */
+.pill-superuser{ color: var(--green);  background: var(--green-d);  border-color: rgba(74,222,128,0.3); }
 
 /* ── Cards ──────────────────────────────────────────────────────────────────── */
 .card {
@@ -255,7 +259,7 @@ h2 { font-size: 15px; font-weight: 600; color: var(--t2); }
 }
 .sar-table-head > div {
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--t5);
+  text-transform: uppercase; color: var(--t4);
 }
 .sar-table-row {
   display: grid; grid-template-columns: 110px 1fr 100px 120px 70px 110px 100px;
@@ -591,7 +595,7 @@ h2 { font-size: 15px; font-weight: 600; color: var(--t2); }
 .cand-btn-exstaff:hover, .cand-btn-exstaff.sel { background: var(--purple-d); }
 
 /* Keyboard hint */
-.kbd-hint { font-family: var(--mono); font-size: 9px; color: var(--t5); border: 1px solid var(--border); padding: 1px 4px; border-radius: 3px; }
+.kbd-hint { font-family: var(--mono); font-size: 10px; color: var(--t3); border: 1px solid var(--border-hi); padding: 1px 4px; border-radius: 3px; }
 
 /* ── Legend ──────────────────────────────────────────────────────────────────── */
 .colour-legend {
@@ -823,6 +827,97 @@ h2 { font-size: 15px; font-weight: 600; color: var(--t2); }
 .template-cat  { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t4); margin-bottom: 4px; }
 .template-name { font-size: 13px; font-weight: 500; color: var(--t1); margin-bottom: 4px; }
 .template-desc { font-size: 11px; color: var(--t4); }
+
+/* ── Data table (P1-3: admin/audit + admin/ig_report) ────────────────────────── */
+.data-table {
+  background: var(--bg-e); border: 1px solid var(--border); border-radius: var(--r-lg);
+  overflow: hidden; box-shadow: var(--shadow-sm); width: 100%; border-collapse: collapse;
+}
+.data-table thead th {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--t4); background: var(--bg); border-bottom: 1px solid var(--border);
+  padding: 9px 10px; text-align: left; font-weight: 600;
+}
+.data-table thead th:first-child { padding-left: 16px; }
+.data-table thead th:last-child  { padding-right: 16px; }
+.data-table tbody td {
+  padding: 10px 10px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+.data-table tbody td:first-child { padding-left: 16px; }
+.data-table tbody td:last-child  { padding-right: 16px; }
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover td { background: rgba(79,138,209,0.04); }
+.data-table td.num { text-align: right; font-family: var(--mono); }
+.data-table td.ts  { font-family: var(--mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+
+/* ── Small danger button (P2-6: Delete buttons) ────────────────────────────── */
+.btn-sm-danger {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; border-radius: var(--r-sm);
+  background: var(--bg-ee); color: var(--t4); border: 1px solid var(--border);
+  transition: all 0.12s; cursor: pointer; white-space: nowrap;
+}
+.btn-sm-danger:hover, .btn-sm-danger:focus-visible {
+  color: var(--red); border-color: rgba(248,113,113,0.4); background: var(--bg-e);
+}
+
+/* ── Workflow text (P2-9: workflow column) ──────────────────────────────────── */
+.workflow-text {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--t4);
+}
+
+/* ── Fix-mode banner token classes (P3-21) ──────────────────────────────────── */
+.fix-banner {
+  background: var(--red-d); border-bottom: 2px solid var(--red); color: var(--red);
+}
+.fix-banner-title-text { color: var(--red); }
+.fix-banner-detail-text { color: var(--red); opacity: 0.85; }
+.btn-fix-nav {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; border-radius: var(--r-sm);
+  background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.4);
+  transition: all 0.12s; cursor: pointer; white-space: nowrap;
+}
+.btn-fix-nav:hover { background: rgba(248,113,113,0.25); }
+.btn-fix-mark {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; border-radius: var(--r-sm);
+  background: var(--green-d); color: var(--green); border: 1px solid rgba(74,222,128,0.4);
+  transition: all 0.12s; cursor: pointer; white-space: nowrap;
+}
+.btn-fix-mark:hover { background: rgba(74,222,128,0.2); }
+.btn-fix-dismiss {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; border-radius: var(--r-sm);
+  background: var(--amber-d); color: var(--amber); border: 1px solid rgba(251,191,36,0.4);
+  transition: all 0.12s; cursor: pointer; white-space: nowrap;
+}
+.btn-fix-dismiss:hover { background: rgba(251,191,36,0.2); }
+.btn-fix-exit {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; border-radius: var(--r-sm);
+  background: var(--bg-ee); color: var(--t3); border: 1px solid var(--border-hi);
+  transition: all 0.12s; cursor: pointer; white-space: nowrap;
+}
+.btn-fix-exit:hover { color: var(--t1); border-color: var(--border-hi); }
+.fix-done-toast-token {
+  background: var(--green-d); border: 1px solid rgba(74,222,128,0.4); color: var(--green);
+}
+
+/* ── Account page layout (P3-19) ────────────────────────────────────────────── */
+.account-grid {
+  display: grid; grid-template-columns: 320px 1fr; gap: 20px;
+  align-items: start; max-width: 880px;
+}
+
+/* ── Filter button height alignment (P2-12) ─────────────────────────────────── */
+.btn-filter {
+  height: 38px; padding: 0 16px; font-size: 13px; font-weight: 500;
+  border-radius: var(--r-md); cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+}
 
 /* ── Responsive ───────────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {

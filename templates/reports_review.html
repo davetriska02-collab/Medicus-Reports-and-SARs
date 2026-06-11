@@ -3,7 +3,12 @@
 {% block content %}
 <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
   <div>
-    <a href="/reports" class="page-header-back">← Reports</a>
+    <a href="/reports" class="page-header-back">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <polyline points="8 2 3 6.5 8 11"/>
+      </svg>
+      Reports
+    </a>
     <h1>{{ report.patient.full_name }}</h1>
     <div class="heading-rule"></div>
     <div style="font-size:12px;color:var(--t3);margin-top:6px;">{{ report.template_name }}
@@ -26,7 +31,7 @@
 
 {% if report.keyword_flags %}
 <div class="alert alert-info" style="margin-bottom:20px;">
-  ⚑ Keyword flags found: {{ report.keyword_flags | join(', ') }}
+  Keyword flags found: {{ report.keyword_flags | join(', ') }}
 </div>
 {% endif %}
 
@@ -146,7 +151,7 @@ function generatePdf() {
   fetch('/api/reports/' + REPORT_ID + '/generate', { method: 'POST' })
     .then(r => r.json()).then(d => {
       if (d.ok) {
-        document.getElementById('dl-link').innerHTML = '<a href="/api/reports/' + REPORT_ID + '/download/' + d.filename + '" class="btn btn-primary" style="margin-top:8px;">↓ Download PDF</a>';
+        document.getElementById('dl-link').innerHTML = '<a href="/api/reports/' + REPORT_ID + '/download/' + d.filename + '" class="btn btn-primary" style="margin-top:8px;">Download PDF</a>';
         document.getElementById('dl-link').style.display = 'block';
         document.getElementById('gen-btn').textContent = 'Regenerate';
         document.getElementById('gen-btn').disabled = false;

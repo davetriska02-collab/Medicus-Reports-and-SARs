@@ -7,7 +7,13 @@
     <h1>Reports</h1>
     <div class="heading-rule"></div>
   </div>
-  <a href="/reports/new" class="btn btn-primary">+ New report</a>
+  <a href="/reports/new" class="btn btn-primary">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <line x1="6.5" y1="1.5" x2="6.5" y2="11.5"/>
+      <line x1="1.5" y1="6.5" x2="11.5" y2="6.5"/>
+    </svg>
+    New report
+  </a>
 </div>
 
 {% set total_r = reports|length %}
@@ -39,9 +45,19 @@
   {% endfor %}
 </div>
 {% else %}
-<div style="text-align:center;padding:48px 20px;color:var(--t4);">
-  <div style="font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">No reports yet</div>
-  <a href="/reports/new" class="btn btn-primary">Create first report</a>
+<div class="empty-state">
+  <div class="empty-state-icon">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="2" width="18" height="22" rx="2"/>
+      <line x1="9" y1="8" x2="17" y2="8"/>
+      <line x1="9" y1="13" x2="17" y2="13"/>
+      <line x1="9" y1="18" x2="13" y2="18"/>
+    </svg>
+  </div>
+  <div class="empty-state-title">No reports yet</div>
+  <div class="empty-state-actions">
+    <a href="/reports/new" class="btn btn-primary">Create first report</a>
+  </div>
 </div>
 {% endif %}
 

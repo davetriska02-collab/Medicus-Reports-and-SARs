@@ -2,18 +2,17 @@
 {% block title %}New Report — SAR Redact{% endblock %}
 {% block extra_head %}
 <style>
-.template-card { background:var(--bg-e); border:2px solid var(--border); border-radius:var(--r-lg); padding:16px; cursor:pointer; transition:border-color 0.15s,background 0.15s; }
-.template-card:hover { border-color:var(--border-hi); background:var(--bg-ee); }
-.template-card.selected { border-color:var(--accent); background:rgba(74,127,184,0.08); }
-.template-cat { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--t4); margin-bottom:4px; }
-.template-name { font-size:13px; font-weight:500; color:var(--t1); margin-bottom:4px; }
-.template-desc { font-size:11px; color:var(--t4); }
 #step2, #step3, #progress-card { display:none; }
 </style>
 {% endblock %}
 {% block content %}
 <div class="page-header">
-  <a href="/reports" class="page-header-back">← Reports</a>
+  <a href="/reports" class="page-header-back">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <polyline points="8 2 3 6.5 8 11"/>
+    </svg>
+    Reports
+  </a>
   <h1>New Medical Report</h1>
   <div class="heading-rule"></div>
 </div>
@@ -75,7 +74,13 @@
   <div class="form-card-title">Step 3 — Medical records</div>
   <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
     <input type="file" id="file-input" multiple accept=".pdf,.tif,.tiff,.rtf,.txt,.zip">
-    <div class="upload-zone-icon">⊕</div>
+    <div class="upload-zone-icon">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 24c-3.3 0-6-2.7-6-6 0-3 2.1-5.5 5-5.9C11.6 9.3 14.6 7 18 7c4.4 0 8 3.6 8 8h1c2.2 0 4 1.8 4 4s-1.8 4-4 4H12z"/>
+        <polyline points="14 20 18 16 22 20"/>
+        <line x1="18" y1="16" x2="18" y2="28"/>
+      </svg>
+    </div>
     <div class="upload-zone-text">Click to add files</div>
     <div class="upload-zone-hint">PDF, TIF, RTF, TXT, ZIP</div>
   </div>

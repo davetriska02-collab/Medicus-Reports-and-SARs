@@ -2,20 +2,34 @@
 {% block title %}Dashboard — SAR Redact{% endblock %}
 {% block content %}
 {% if update and update.update_available %}
-<div id="update-banner" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);border-radius:var(--r-lg);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-  <span style="font-size:18px;">↑</span>
-  <div style="flex:1;">
-    <span style="font-weight:500;color:var(--green);">Update available — v{{ update.latest_version }}</span>
-    {% if update.release_name %}<span style="color:var(--t3);font-size:12px;margin-left:8px;">{{ update.release_name }}</span>{% endif %}
-    {% if update.release_notes %}<div style="font-size:12px;color:var(--t4);margin-top:3px;">{{ update.release_notes[:120] }}{% if update.release_notes|length > 120 %}…{% endif %}</div>{% endif %}
+<div id="update-banner" class="update-banner">
+  <div class="update-banner-icon">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 10 10 14 14 10"/>
+      <line x1="10" y1="3" x2="10" y2="14"/>
+      <path d="M3 17h14"/>
+    </svg>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
-    <a href="{{ update.download_url }}" target="_blank" class="btn btn-primary" style="font-size:11px;height:30px;padding:0 12px;">↓ Download</a>
-    <a href="{{ update.release_url }}" target="_blank" class="btn btn-ghost" style="font-size:11px;height:30px;padding:0 10px;">Release notes</a>
-    <button onclick="dismissUpdate()" style="background:none;border:none;color:var(--t5);font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">×</button>
+  <div class="update-banner-body">
+    <span class="update-banner-title">Update available — v{{ update.latest_version }}</span>
+    {% if update.release_name %}<span class="update-banner-subtitle">{{ update.release_name }}</span>{% endif %}
+    {% if update.release_notes %}<div class="update-banner-notes">{{ update.release_notes[:120] }}{% if update.release_notes|length > 120 %}…{% endif %}</div>{% endif %}
+  </div>
+  <div class="update-banner-actions">
+    <a href="{{ update.download_url }}" target="_blank" class="btn btn-primary" style="font-size:12px;height:30px;padding:0 12px;">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 7 6.5 10.5 10 7"/>
+        <line x1="6.5" y1="2" x2="6.5" y2="10.5"/>
+        <path d="M1.5 12h10"/>
+      </svg>
+      Download
+    </a>
+    <a href="{{ update.release_url }}" target="_blank" class="btn btn-ghost" style="font-size:12px;height:30px;padding:0 10px;">Release notes</a>
+    <button onclick="dismissUpdate()" class="update-banner-dismiss" aria-label="Dismiss">&times;</button>
   </div>
 </div>
 {% endif %}
+
 <div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;">
   <div>
     <div class="mono-label" style="margin-bottom:4px;">{{ practice.practice_name }}</div>
@@ -24,47 +38,72 @@
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
     {% if archived_count > 0 and not show_archived %}
-    <a href="/?archived=1" class="btn btn-ghost" style="font-size:11px;">{{ archived_count }} archived</a>
+    <a href="/?archived=1" class="btn btn-ghost" style="font-size:12px;">{{ archived_count }} archived</a>
     {% endif %}
     {% if show_archived %}
-    <a href="/" class="btn btn-ghost">← Active</a>
+    <a href="/" class="btn btn-ghost">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <polyline points="8 2 3 6.5 8 11"/>
+      </svg>
+      Active
+    </a>
     {% endif %}
-    <button class="btn btn-ghost" onclick="toggleTransfer()">⇄ Transfer SAR</button>
+    <button class="btn btn-ghost" onclick="toggleTransfer()">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="10 2 13 5 10 8"/>
+        <polyline points="4 6 1 9 4 12"/>
+        <line x1="13" y1="5" x2="1" y2="5"/>
+        <line x1="13" y1="9" x2="1" y2="9"/>
+      </svg>
+      Transfer SAR
+    </button>
     {% if current_user and current_user.role == 'admin' %}
-    <button class="btn btn-ghost" id="demo-sar-btn" onclick="launchDemoSar()" title="Create a synthetic patient SAR to explore the review workflow">🎓 Try a demo SAR</button>
+    <button class="btn btn-ghost" id="demo-sar-btn" onclick="launchDemoSar()" title="Create a synthetic patient SAR to explore the review workflow">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="7" cy="7" r="5.5"/>
+        <polyline points="5 7 6.5 8.5 9.5 5.5"/>
+      </svg>
+      <span id="demo-sar-label">Try a demo SAR</span>
+    </button>
     {% endif %}
-    <a href="/new" class="btn btn-primary">+ New SAR</a>
+    <a href="/new" class="btn btn-primary">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <line x1="6.5" y1="1.5" x2="6.5" y2="11.5"/>
+        <line x1="1.5" y1="6.5" x2="11.5" y2="6.5"/>
+      </svg>
+      New SAR
+    </a>
   </div>
 </div>
 
 {% if show_archived %}
 <div class="alert alert-info" style="margin-bottom:20px;">
-  Showing archived SARs. <a href="/">Return to active dashboard →</a>
+  Showing archived SARs. <a href="/">Return to active dashboard &rarr;</a>
 </div>
 {% endif %}
 
 {% if not show_archived and (overdue_count_strip + due3_count) > 0 %}
-<div id="urgency-strip" style="background:rgba(255,80,80,0.07);border:1px solid rgba(255,80,80,0.25);border-radius:var(--r-lg);padding:10px 16px;margin-bottom:16px;">
-  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+<div id="urgency-strip" class="urgency-strip">
+  <div class="urgency-badges">
     {% if overdue_count_strip > 0 %}
-    <span style="background:#c0392b;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">{{ overdue_count_strip }} overdue</span>
+    <span class="urgency-badge urgency-badge-overdue">{{ overdue_count_strip }} overdue</span>
     {% endif %}
     {% if due3_count > 0 %}
-    <span style="background:#e67e22;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">{{ due3_count }} due ≤3 days</span>
+    <span class="urgency-badge urgency-badge-soon">{{ due3_count }} due &le;3 days</span>
     {% endif %}
     {% if due7_count > 0 %}
-    <span style="background:var(--border);color:var(--t2);border-radius:12px;padding:2px 10px;font-size:11px;font-weight:500;">{{ due7_count }} due ≤7 days</span>
+    <span class="urgency-badge urgency-badge-week">{{ due7_count }} due &le;7 days</span>
     {% endif %}
   </div>
-  <div style="display:flex;flex-direction:column;gap:4px;">
+  <div class="urgency-list">
     {% for u in urgent_sars %}
-    <div style="font-size:12px;">
-      <a href="/review/{{ u.id }}" style="color:var(--t1);text-decoration:none;font-weight:500;">{{ u.name }}</a>
-      <span style="color:var(--t4);margin-left:6px;">—</span>
+    <div class="urgency-item">
+      <a href="/review/{{ u.id }}">{{ u.name }}</a>
+      <span class="urgency-item-sep">&mdash;</span>
       {% if u.days_remaining < 0 %}
-      <span style="color:#c0392b;margin-left:6px;">overdue by {{ u.days_remaining|abs }} day{{ 's' if u.days_remaining|abs != 1 }}</span>
+      <span class="urgency-item-overdue">overdue by {{ u.days_remaining|abs }} day{{ 's' if u.days_remaining|abs != 1 }}</span>
       {% else %}
-      <span style="color:{% if u.days_remaining <= 3 %}#e67e22{% else %}var(--t3){% endif %};margin-left:6px;">due {{ u.due_date|fdate }}</span>
+      <span class="{% if u.days_remaining <= 3 %}urgency-item-soon{% else %}urgency-item-ok{% endif %}">due {{ u.due_date|fdate }}</span>
       {% endif %}
     </div>
     {% endfor %}
@@ -97,10 +136,10 @@
 <!-- ── SAR Transfer ──────────────────────────────────────────────────────── -->
 {% if current_user and current_user.role == 'admin' %}
 <div id="transfer-section" class="card" style="margin-bottom:24px;display:none;">
-  <div class="card-header" style="justify-content:space-between;">
+  <div class="card-header">
     <span class="mono-label">SAR Transfer</span>
-    <button onclick="document.getElementById('transfer-section').style.display='none'" 
-      style="background:none;border:none;color:var(--t4);font-size:16px;cursor:pointer;line-height:1;">×</button>
+    <button onclick="document.getElementById('transfer-section').style.display='none'"
+      style="background:none;border:none;color:var(--t4);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
   </div>
   <div class="card-body">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
@@ -108,15 +147,15 @@
       <!-- Import -->
       <div>
         <div class="mono-label" style="margin-bottom:8px;">Import .sarpack</div>
-        <p style="font-size:12px;color:var(--t3);margin-bottom:12px;line-height:1.6;">
-          Receive a SAR from another machine (e.g. started by admin, 
+        <p style="font-size:13px;color:var(--t3);margin-bottom:12px;line-height:1.6;">
+          Receive a SAR from another machine (e.g. started by admin,
           continuing review here). Drag a <code style="font-family:var(--mono);font-size:11px;color:var(--t2);">.sarpack</code> file below.
         </p>
-        <div class="upload-zone" id="import-zone" style="padding:20px;" 
+        <div class="upload-zone" id="import-zone" style="padding:20px;"
           onclick="document.getElementById('import-input').click()">
           <input type="file" id="import-input" accept=".sarpack,.zip" style="display:none">
           <div style="font-size:13px;color:var(--t3);">Drop .sarpack here or click to browse</div>
-          <div style="font-size:11px;color:var(--t5);margin-top:4px;">USB stick · network share · email attachment</div>
+          <div style="font-size:11px;color:var(--t5);margin-top:4px;">USB stick &middot; network share &middot; email attachment</div>
         </div>
         <div id="import-status" style="margin-top:10px;font-size:12px;display:none;"></div>
       </div>
@@ -124,22 +163,22 @@
       <!-- How it works -->
       <div>
         <div class="mono-label" style="margin-bottom:8px;">How transfer works</div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <div style="display:flex;gap:10px;align-items:flex-start;">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</span>
-            <span style="font-size:12px;color:var(--t3);">Admin uploads documents and detection runs on their machine</span>
+        <div class="transfer-steps">
+          <div class="transfer-step">
+            <span class="transfer-step-num">1</span>
+            <span class="transfer-step-text">Admin uploads documents and detection runs on their machine</span>
           </div>
-          <div style="display:flex;gap:10px;align-items:flex-start;">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</span>
-            <span style="font-size:12px;color:var(--t3);">Click <strong style="color:var(--t2);">↓ Export</strong> in the review toolbar to download a <code style="font-family:var(--mono);font-size:11px;color:var(--t2);">.sarpack</code> file</span>
+          <div class="transfer-step">
+            <span class="transfer-step-num">2</span>
+            <span class="transfer-step-text">Click <strong style="color:var(--t2);">Export</strong> in the review toolbar to download a <code style="font-family:var(--mono);font-size:11px;color:var(--t2);">.sarpack</code> file</span>
           </div>
-          <div style="display:flex;gap:10px;align-items:flex-start;">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</span>
-            <span style="font-size:12px;color:var(--t3);">Copy to USB stick (or email) and open this panel on the receiving machine</span>
+          <div class="transfer-step">
+            <span class="transfer-step-num">3</span>
+            <span class="transfer-step-text">Copy to USB stick (or email) and open this panel on the receiving machine</span>
           </div>
-          <div style="display:flex;gap:10px;align-items:flex-start;">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(74,127,184,0.15);border:1px solid rgba(74,127,184,0.3);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">4</span>
-            <span style="font-size:12px;color:var(--t3);">Import here, complete review, export again to return to admin for sign-off</span>
+          <div class="transfer-step">
+            <span class="transfer-step-num">4</span>
+            <span class="transfer-step-text">Import here, complete review, export again to return to admin for sign-off</span>
           </div>
         </div>
       </div>
@@ -153,8 +192,8 @@
   <div class="modal">
     <div class="modal-title">SAR already exists on this machine</div>
     <div class="modal-subtitle" id="conflict-detail"></div>
-    <div style="margin-top:16px;font-size:12px;color:var(--t3);">
-      The incoming .sarpack is more recent. You can overwrite the local copy 
+    <div style="margin-top:16px;font-size:13px;color:var(--t3);">
+      The incoming .sarpack is more recent. You can overwrite the local copy
       with the imported version, or cancel to keep the local copy.
     </div>
     <div class="modal-footer">
@@ -164,6 +203,7 @@
   </div>
 </div>
 {% endif %}
+
 {% if sar_summaries %}
 <div class="sar-table">
   <div class="sar-table-head">
@@ -181,7 +221,7 @@
     <div class="sar-table-ref">{{ sar.id[:8] }}</div>
     <div>
       <div class="sar-table-name"><a href="/review/{{ sar.id }}">{{ sar.subject.full_name or (sar.subject.first_name ~ ' ' ~ sar.subject.last_name)|trim }}</a></div>
-      {% if sar.subject.nhs_number %}<div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:2px;">NHS {{ sar.subject.nhs_number }}</div>{% endif %}
+      {% if sar.subject.nhs_number %}<div class="sar-table-nhs">NHS {{ sar.subject.nhs_number }}</div>{% endif %}
     </div>
     <div>
       {% if sar.status == 'reviewing' %}<span class="pill pill-reviewing">Reviewing</span>
@@ -220,12 +260,35 @@
   {% endfor %}
 </div>
 {% else %}
-<div style="text-align:center;padding:60px 20px;color:var(--t4);">
-  <div style="font-size:32px;margin-bottom:12px;">○</div>
-  <div style="font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">No SARs found</div>
-  <div style="font-size:13px;color:var(--t5);margin-bottom:20px;">Upload your first Subject Access Request to get started.</div>
-  <button class="btn btn-ghost" onclick="toggleTransfer()">⇄ Transfer SAR</button>
-    <a href="/new" class="btn btn-primary">+ New SAR</a>
+<div class="empty-state">
+  <div class="empty-state-icon">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="2" width="18" height="22" rx="2"/>
+      <line x1="9" y1="8" x2="17" y2="8"/>
+      <line x1="9" y1="13" x2="17" y2="13"/>
+      <line x1="9" y1="18" x2="13" y2="18"/>
+    </svg>
+  </div>
+  <div class="empty-state-title">No SARs found</div>
+  <div class="empty-state-hint">Upload your first Subject Access Request to get started.</div>
+  <div class="empty-state-actions">
+    <button class="btn btn-ghost" onclick="toggleTransfer()">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="10 2 13 5 10 8"/>
+        <polyline points="4 6 1 9 4 12"/>
+        <line x1="13" y1="5" x2="1" y2="5"/>
+        <line x1="13" y1="9" x2="1" y2="9"/>
+      </svg>
+      Transfer SAR
+    </button>
+    <a href="/new" class="btn btn-primary">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <line x1="6.5" y1="1.5" x2="6.5" y2="11.5"/>
+        <line x1="1.5" y1="6.5" x2="11.5" y2="6.5"/>
+      </svg>
+      New SAR
+    </a>
+  </div>
 </div>
 {% endif %}
 {% endblock %}
@@ -340,15 +403,25 @@ function deleteSar(id, name) {
 
 function launchDemoSar() {
   const btn = document.getElementById('demo-sar-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating demo...'; }
+  const lbl = document.getElementById('demo-sar-label');
+  if (btn) btn.disabled = true;
+  if (lbl) lbl.textContent = 'Creating demo…';
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
   fetch('/api/demo-sar', { method: 'POST', headers: {'X-CSRF-Token': csrf} })
     .then(r => r.json())
     .then(d => {
       if (d.ok && d.sar_id) { window.location.href = '/review/' + d.sar_id; }
-      else { alert('Error: ' + (d.error || 'Unknown')); if (btn) { btn.disabled = false; btn.textContent = '🎓 Try a demo SAR'; } }
+      else {
+        alert('Error: ' + (d.error || 'Unknown'));
+        if (btn) btn.disabled = false;
+        if (lbl) lbl.textContent = 'Try a demo SAR';
+      }
     })
-    .catch(e => { alert('Request failed: ' + e); if (btn) { btn.disabled = false; btn.textContent = '🎓 Try a demo SAR'; } });
+    .catch(e => {
+      alert('Request failed: ' + e);
+      if (btn) btn.disabled = false;
+      if (lbl) lbl.textContent = 'Try a demo SAR';
+    });
 }
 </script>
 {% endblock %}

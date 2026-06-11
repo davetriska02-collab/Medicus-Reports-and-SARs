@@ -1,6 +1,6 @@
 # SAR Redact — Repository Audit & Improvement Plan
 
-**Audited at:** v2.5.2 · **Report updated through:** v2.5.3 · **Date:** 2026-06-11
+**Audited at:** v2.5.2 · **Report updated through:** v2.6.1 · **Date:** 2026-06-11
 
 This audit was produced by a multi-stream review (backend, frontend/deployment/dependencies,
 tests/data-flow) with every finding grounded in `file:line` evidence. Items marked
@@ -109,7 +109,8 @@ failure handling) is markedly more mature than the surrounding web tier.
 
 ### MEDIUM
 - Detection benchmark runs nowhere automatically — 99.4%/100% can regress
-  silently. *Open — Milestone 0.*
+  silently. **✅ FIXED in 2.6.1** (`tests.yml` benchmark gate step added; `--ci`
+  flag exits non-zero if NAME recall < 0.97 or precision < 0.99).
 - ~~`redetect_sar` double-saves the same object from request + background thread →
   possible corrupt snapshot.~~ **✅ FIXED in 2.6.0** (subject-detail mutation + initial
   save now under `_mutate` before thread start; background thread's final save also
@@ -119,17 +120,28 @@ failure handling) is markedly more mature than the surrounding web tier.
 - ~~Double OCR-probe per page re-opens the PDF (`detector.py:275` + `:286`).~~
   **✅ FIXED in 2.6.0** (pre-computed `_ocr_needed` dict used in both places).
 - CI actions tag-pinned not SHA-pinned; release workflow has `contents: write`.
-  *Open — Milestone 3.*
+  **✅ FIXED in 2.6.1** (SHA pins confirmed present in all three workflow files;
+  `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4` and
+  `actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5`).
 - TLS key 10-year validity; `chmod 0o600` no-ops on Windows → key world-readable.
-  *Open — Milestone 3.*
+  **✅ FIXED in 2.6.1** (validity reduced to 825 days; `icacls` added for Windows).
 - `server_loop.bat` restarts every 5s with no backoff and no crash-log capture.
-  *Open — Milestone 3.*
+  **✅ FIXED in 2.6.1** (timestamped log, escalating backoff 5s/15s/60s, crash-loop
+  warning after 5 consecutive rapid crashes).
 
 ### LOW
-`_presence` dict leaks one key per deleted SAR · several `complete.html` fetches
-lack `.catch()` · review UI accessibility (no ARIA on the redaction overlay,
-no `aria-live`) · password policy length-only · stale docs (`~20 MB` bundle is
-really ~40–60 MB; install-time "2 min" vs "3–8 min").
+- `_presence` dict leaks one key per deleted SAR. **✅ FIXED in 2.6.0** (cleanup
+  present in `_delete_sar_data`; confirmed and verified at 2.6.1 audit sweep).
+- Several `complete.html` fetches lack `.catch()`. **✅ FIXED in 2.6.1**
+  (`saveNotes` shows red "Could not save"; `archiveSar`, `deleteSar`,
+  `resumeClock` alert with error message).
+- Review UI accessibility (no ARIA on the redaction overlay, no `aria-live`).
+  **✅ FIXED in 2.6.1** (`role="application" aria-label="Redaction overlay"` on
+  SVG; `aria-live="polite"` on candidate list container).
+- Password policy length-only. *Open.*
+- Stale docs (`~20 MB` bundle is really ~40–60 MB; install-time "2 min" vs
+  "3–8 min"). **✅ FIXED in 2.6.1** (INSTALL.md, README.md, EASY_INSTALL_GUIDE.md
+  all updated to "~40 MB" / "3–8 minutes").
 
 ### Strengths (preserve these)
 Redaction-failure honesty (never overstates) · `redactor.py` 100% covered ·
@@ -180,7 +192,7 @@ XSS escaping, secure-cookie/session-lifetime.
 **Milestone 0 — Safety net (remaining)**
 - M0.1 (M): broaden template tests to assert key globals are defined after render.
 - M0.2 (M): concurrency test proving the H1 race, then guard it.
-- M0.3 (S): wire `tools/benchmark_detection.py` into CI with a recall/precision floor.
+- ~~M0.3 (S): wire `tools/benchmark_detection.py` into CI with a recall/precision floor.~~ **✅ FIXED in 2.6.1**
 
 **Milestone 1 — Critical & High correctness/security (remaining)**
 - ~~M1.1 (M): fix H1 lost-update — re-read-under-lock or optimistic version check.~~ **✅ FIXED in 2.5.4**
@@ -193,9 +205,18 @@ XSS escaping, secure-cookie/session-lifetime.
 - ~~M2.3 (S): fix `redetect_sar` double-save; de-duplicate the per-page OCR probe.~~ **✅ FIXED in 2.6.0**
 
 **Milestone 3 — Quality & polish**
-SHA-pin CI actions · `server_loop.bat` backoff + crash log · TLS validity +
-Windows `icacls` · `.catch()` on `complete.html` fetches · doc corrections ·
-begin blueprint split of `app.py`.
+~~SHA-pin CI actions~~ ✅ · ~~`server_loop.bat` backoff + crash log~~ ✅ ·
+~~TLS validity + Windows `icacls`~~ ✅ · ~~`.catch()` on `complete.html` fetches~~ ✅ ·
+~~doc corrections~~ ✅ · ~~`_presence` leak~~ ✅ · ~~accessibility wins~~ ✅ ·
+begin blueprint split of `app.py` *(remaining — high churn, scheduled separately)*.
+
+**Remaining plan (after 2.6.1)**
+- M0.1: broaden template tests to assert key globals are defined after render.
+- M0.2: concurrency test proving the H1 race, then guard it.
+- Blueprint split of `app.py` (91 routes into Flask blueprints — deliberately
+  last due to high churn; requires solid test net to be safe).
+- Password-complexity policy (length-only policy is a low risk vs. above work).
+- Full WCAG 2.1 AA (real but not the current risk profile).
 
 ---
 

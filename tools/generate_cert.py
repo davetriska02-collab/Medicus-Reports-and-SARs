@@ -2,15 +2,19 @@
 
 Usage:  python tools/generate_cert.py [extra-hostname-or-ip ...]
 
-Writes data/tls/cert.pem and data/tls/key.pem (10-year validity) with SANs
-for this machine's hostname, its LAN IP and localhost, plus any extras given
-on the command line. Requires the 'cryptography' package:
+Writes data/tls/cert.pem and data/tls/key.pem (~2.25-year / 825-day validity,
+the industry maximum accepted by modern browsers) with SANs for this machine's
+hostname, its LAN IP and localhost, plus any extras given on the command line.
+Requires the 'cryptography' package:
 
     pip install cryptography
 
 No admin rights needed — this is just two files in the data folder. Browsers
 will show a one-time "not trusted" warning for self-signed certs; staff can
 accept it, or IT can add the cert to the trusted store via group policy.
+
+The certificate expires after ~2.25 years. Regenerate it with the same command
+before it expires to avoid browser warnings.
 """
 import os
 import socket
@@ -62,7 +66,7 @@ def main():
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
             .not_valid_before(now - timedelta(days=1))
-            .not_valid_after(now + timedelta(days=3650))
+            .not_valid_after(now + timedelta(days=825))
             .add_extension(x509.SubjectAlternativeName(san_names), critical=False)
             .sign(key, hashes.SHA256()))
 
@@ -78,6 +82,21 @@ def main():
         os.chmod(key_path, 0o600)
     except OSError:
         pass  # Windows
+
+    # On Windows, additionally use icacls to restrict the key to the current user
+    # (chmod is a no-op on Windows, so without this the key is world-readable).
+    if sys.platform == "win32":
+        try:
+            import subprocess
+            username = os.environ.get("USERNAME", "")
+            if username:
+                subprocess.run(
+                    ["icacls", str(key_path), "/inheritance:r",
+                     "/grant:r", f"{username}:F"],
+                    check=False, capture_output=True
+                )
+        except Exception:
+            pass  # best-effort; do not fail cert generation over permission setting
 
     print(f"Written: {cert_path}")
     print(f"Written: {key_path}")

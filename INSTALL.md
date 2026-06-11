@@ -28,7 +28,7 @@ The data folder (`C:\SAR Redact\data\`) will then be on a local drive. SAR recor
 
 1. Extract the zip to a permanent location (e.g. `C:\SAR Redact\`)
 2. Double-click `start_server.bat`
-3. First run downloads dependencies — takes 2–4 minutes
+3. First run downloads dependencies — takes 3–8 minutes
 4. Open browser to `http://localhost:5000`
 
 ---
@@ -73,7 +73,7 @@ Ask your IT team to install Python 3.12 from `https://www.python.org/downloads`
 with "Add python.exe to PATH" ticked. No other configuration needed.
 
 **Option C — Offline bundle (recommended for proxied-off practices)**
-A fully self-contained zip (~20 MB) with Python and all dependencies
+A fully self-contained zip (~40 MB) with Python and all dependencies
 pre-installed — the recipient extracts it and runs `start_server.bat` with
 no internet needed at any point. Build it on any machine with internet:
 
@@ -121,8 +121,10 @@ Waitress serves plain HTTP. To enable TLS — still without admin rights:
 2. `python tools\generate_cert.py`
 3. Restart the server — it detects `data/tls/cert.pem` and switches to HTTPS
 
-The certificate is self-signed, so browsers show a one-time warning that
-staff can accept (or IT can trust the cert centrally via group policy).
+The certificate is self-signed (~2.25 years / 825-day validity — the industry
+maximum accepted by modern browsers), so browsers show a one-time warning that
+staff can accept (or IT can trust the cert centrally via group policy). When the
+certificate expires, regenerate it with the same command and restart the server.
 
 ---
 

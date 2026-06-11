@@ -10,6 +10,13 @@ import sys
 
 import pytest
 
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "slow: marks tests as slow (deselect with -m 'not slow')"
+    )
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 

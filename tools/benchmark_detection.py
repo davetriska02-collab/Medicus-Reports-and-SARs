@@ -3,10 +3,16 @@
 Generates clinical-note-style text with planted PII in realistic formats,
 runs the detectors, and reports precision/recall per category.
 
-Usage:  python tools/benchmark_detection.py [--docs 200] [--seed 42]
+Usage:  python tools/benchmark_detection.py [--docs 200] [--seed 42] [--ci]
+
+    --ci   Print per-category metrics then exit non-zero if NAME recall < 0.97
+           or NAME precision < 0.99.  Used as a CI gate so detection quality
+           regressions fail the build immediately.
 
 The numbers this prints are the product's accuracy claims — run it after any
 change to sar/name_detector.py, sar/detector.py or sar/nhs_patterns.py.
+
+The corpus is fully deterministic when --seed is fixed (default 42).
 """
 import argparse
 import random
@@ -113,6 +119,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--docs", type=int, default=200)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--ci",
+        action="store_true",
+        help="CI gate: exit non-zero if NAME recall < 0.97 or NAME precision < 0.99",
+    )
     args = ap.parse_args()
     rng = random.Random(args.seed)
 
@@ -160,6 +171,8 @@ def main():
     print(f"\nDetection benchmark — {args.docs} synthetic documents (seed {args.seed})")
     print(f"{'Category':<12} {'Recall':>8} {'Precision*':>11}   (tp/fn/fp)")
     print("-" * 48)
+    name_recall = 0.0
+    name_precision = 1.0
     for key, s in stats.items():
         total = s["tp"] + s["fn"]
         recall = s["tp"] / total if total else 0
@@ -167,8 +180,32 @@ def main():
         precision = s["tp"] / denom if denom else 1.0
         prec_str = f"{precision:.1%}" if key == "name" else "—"
         print(f"{key:<12} {recall:>8.1%} {prec_str:>11}   ({s['tp']}/{s['fn']}/{s['fp']})")
+        if key == "name":
+            name_recall = recall
+            name_precision = precision
     print("\n* precision measured for names only; regex categories are pattern-")
     print("  validated (NHS numbers Modulus-11 checked) so FPs are rare by design.")
+
+    if args.ci:
+        failures = []
+        if name_recall < 0.97:
+            failures.append(
+                f"NAME recall {name_recall:.3%} is below the CI floor of 97.0%"
+            )
+        if name_precision < 0.99:
+            failures.append(
+                f"NAME precision {name_precision:.3%} is below the CI floor of 99.0%"
+            )
+        if failures:
+            print("\n[CI GATE FAILED]")
+            for msg in failures:
+                print(f"  FAIL: {msg}")
+            sys.exit(1)
+        else:
+            print(
+                f"\n[CI GATE PASSED]  name recall {name_recall:.3%} ≥ 97.0%,"
+                f" precision {name_precision:.3%} ≥ 99.0%"
+            )
 
 
 if __name__ == "__main__":

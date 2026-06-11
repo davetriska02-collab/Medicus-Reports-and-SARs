@@ -5,6 +5,47 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.6.1] — 2026-06-11
+
+### Changed
+- **Detection benchmark wired into CI** — `tools/benchmark_detection.py --ci` now
+  runs as a gate step in `tests.yml` after pytest. NAME recall below 97.0% or
+  precision below 99.0% fails the build immediately; detection quality can no
+  longer silently regress. Current baseline: recall 99.4%, precision 100.0%.
+  Corpus generation is fully deterministic (fixed seed 42).
+- **CI actions SHA-pinned** — all three workflow files already used SHA-pinned
+  `actions/checkout` and `actions/setup-python` (confirmed at 2.6.1 audit sweep;
+  no changes needed).
+- **TLS certificate validity** — `tools/generate_cert.py` now issues certificates
+  with 825-day (~2.25-year) validity, matching the industry maximum accepted by
+  modern browsers. On Windows the private key is additionally protected via
+  `icacls` (best-effort) since `chmod 0o600` is a no-op on that platform.
+- **`server_loop.bat` hardened** — restart loop now logs timestamped events to
+  `data\logs\server_loop.log`, applies escalating backoff (5 s → 15 s → 60 s)
+  after consecutive rapid crashes, and prints a loud warning with backup guidance
+  after 5 consecutive rapid crashes. Backoff resets after the server stays up
+  over 5 minutes.
+- **Offline bundle size corrected** — INSTALL.md updated from "~20 MB" to
+  "~40 MB". Install-time estimate standardised to "3–8 minutes" across README,
+  INSTALL.md, and EASY_INSTALL_GUIDE.md.
+
+### Fixed
+- **`complete.html` silent fetch failures** — `saveNotes`, `archiveSar`,
+  `deleteSar`, and `resumeClock` now handle network/server errors: `saveNotes`
+  shows a red "Could not save" message; the others surface an `alert` with the
+  error message. Previously all four silently discarded fetch errors.
+- **`_presence` leak verified closed** — `_delete_sar_data` correctly discards
+  the `_presence` entry for deleted SARs (confirmed present since 2.6.0; no
+  change needed).
+
+### Accessibility
+- `review.html` redaction SVG overlay now carries `role="application"` and
+  `aria-label="Redaction overlay"`.
+- Candidate list container now has `aria-live="polite"` so screen readers
+  announce list updates.
+
+---
+
 ## [2.6.0] — 2026-06-11
 
 ### Added

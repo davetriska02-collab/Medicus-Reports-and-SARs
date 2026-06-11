@@ -363,29 +363,43 @@ document.addEventListener('keydown', e => {
 function saveNotes() {
   const notes = document.getElementById('notes-ta').value;
   fetch('/api/sar/' + SAR_ID + '/notes', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({notes}) })
+    .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); })
     .then(() => {
       const el = document.getElementById('notes-saved');
       el.style.display = 'inline';
+      el.style.color = 'var(--green)';
+      el.textContent = 'Saved';
       setTimeout(() => el.style.display = 'none', 2000);
+    })
+    .catch(e => {
+      const el = document.getElementById('notes-saved');
+      el.style.display = 'inline';
+      el.style.color = 'var(--red)';
+      el.textContent = 'Could not save';
+      setTimeout(() => { el.style.display = 'none'; el.style.color = 'var(--green)'; el.textContent = 'Saved'; }, 4000);
     });
 }
 
 function archiveSar() {
   if (!confirm('Archive this SAR? It will move off the active dashboard.')) return;
   fetch('/api/sar/' + SAR_ID + '/archive', { method: 'POST' })
-    .then(r => r.json()).then(d => { if (d.ok) window.location.href = '/'; else alert(d.error); });
+    .then(r => r.json()).then(d => { if (d.ok) window.location.href = '/'; else alert(d.error); })
+    .catch(e => alert('Archive failed: ' + e.message));
 }
 
 function deleteSar() {
   if (!confirm('Permanently delete this SAR and all output files?\n\nThis cannot be undone.')) return;
   fetch('/api/sar/' + SAR_ID + '/delete', { method: 'POST' })
-    .then(r => r.json()).then(d => { if (d.ok) window.location.href = '/'; else alert(d.error); });
+    .then(r => r.json()).then(d => { if (d.ok) window.location.href = '/'; else alert(d.error); })
+    .catch(e => alert('Delete failed: ' + e.message));
 }
 
 function resumeClock() {
   const reason = prompt('Reason for resuming clock (optional):') || '';
   fetch('/api/sar/' + SAR_ID + '/resume-clock', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({reason}) })
-    .then(() => location.reload());
+    .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); })
+    .then(() => location.reload())
+    .catch(e => alert('Resume clock failed: ' + e.message));
 }
 
 function refinalise() {

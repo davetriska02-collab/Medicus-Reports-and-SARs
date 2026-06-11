@@ -47,7 +47,7 @@ seen before.)
 
 ### Step 3: Wait for the one-time setup
 
-The first run downloads what it needs — takes **2–8 minutes** depending on
+The first run downloads what it needs — takes **3–8 minutes** depending on
 your connection. You'll see progress messages like `[1/4] Installing…`.
 Make a cup of tea.
 

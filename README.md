@@ -16,7 +16,7 @@ Built on the Medicus Suite design language. Processes GP medical records for Sub
 **Windows**
 1. Extract this folder somewhere permanent (e.g. `C:\SAR Redact\`)
 2. Double-click `start_server.bat`
-3. First run installs dependencies automatically — takes ~2 minutes
+3. First run installs dependencies automatically — takes 3–8 minutes
 4. Browse to `http://localhost:5000`
 
 **Mac / Linux**

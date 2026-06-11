@@ -88,7 +88,7 @@ body { overflow: hidden; }
     <div class="pdf-scroll" id="pdf-scroll">
       <div id="pdf-canvas-container">
         <canvas id="pdf-canvas"></canvas>
-        <svg id="redact-overlay" class="redact-overlay" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
+        <svg id="redact-overlay" class="redact-overlay" role="application" aria-label="Redaction overlay" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
       </div>
     </div>
 
@@ -139,7 +139,7 @@ body { overflow: hidden; }
     <div class="sidebar-progress">
       <div class="sidebar-progress-fill" id="sidebar-progress-fill" style="width:0%"></div>
     </div>
-    <div class="candidates-list" id="candidates-list">
+    <div class="candidates-list" id="candidates-list" aria-live="polite">
       <div style="text-align:center;padding:32px 16px;color:var(--t5);font-size:12px;">Loading candidates…</div>
     </div>
     <!-- Notes footer -->

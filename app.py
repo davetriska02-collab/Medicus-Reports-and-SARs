@@ -177,6 +177,7 @@ def _to_dict(sar):
         "id": sar.id, "created_at": sar.created_at, "last_modified": sar.last_modified,
         "status": sar.status, "archived": getattr(sar,"archived",False),
         "redaction_failures": getattr(sar,"redaction_failures",[]),
+        "needs_refinalise": getattr(sar,"needs_refinalise",False),
         "unscreened_pages": getattr(sar,"unscreened_pages",[]),
         "due_date": sar.due_date, "notes": sar.notes, "workflow_status": sar.workflow_status,
         "completed_at": getattr(sar, "completed_at", ""),
@@ -253,6 +254,7 @@ def _sar_from_dict(data):
     )
     sar.archived = data.get("archived", False)
     sar.redaction_failures = data.get("redaction_failures", [])
+    sar.needs_refinalise = data.get("needs_refinalise", False)
     sar.unscreened_pages = data.get("unscreened_pages", [])
     ds = data.get("detection_settings")
     if ds:
@@ -1082,8 +1084,10 @@ def finalise_sar(sid):
     if not getattr(sar,"completed_at",""):
         sar.completed_at=datetime.now(timezone.utc).isoformat()
     sar.redaction_failures=[{"id":c.id,"text":c.text,"source_file":c.source_file,
-                             "page_num":c.page_num,"category":c.category.value}
+                             "page_num":c.page_num,"category":c.category.value,
+                             "context":getattr(c,"context","")}
                             for c in failed]
+    sar.needs_refinalise = False
     _save(sar)
     _dictionary.record_unknown_approved(sar)
     _audit("sar_finalised", target=sid,
@@ -1114,6 +1118,8 @@ def generate_response_pack(sid):
         return jsonify({"error":f"{len(sar.redaction_failures)} approved redaction(s) failed to apply — "
                         "resolve them (manual redaction + re-finalise) before generating "
                         "the response pack"}),409
+    if getattr(sar,"needs_refinalise",False):
+        return jsonify({"error":"Manual fixes recorded — re-finalise to apply them before generating disclosure documents"}),409
     od=os.path.join(OUTPUT_DIR,sid)
     if not os.path.isdir(od): return jsonify({"error":"No output files — finalise first"}),400
     cfg=_get_practice_config()
@@ -1138,6 +1144,8 @@ def generate_print_bundle(sid):
     if getattr(sar,"redaction_failures",[]):
         return jsonify({"error":f"{len(sar.redaction_failures)} approved redaction(s) failed to apply — "
                         "resolve them before printing for disclosure"}),409
+    if getattr(sar,"needs_refinalise",False):
+        return jsonify({"error":"Manual fixes recorded — re-finalise to apply them before generating disclosure documents"}),409
     od=os.path.join(OUTPUT_DIR,sid)
     if not os.path.isdir(od): return jsonify({"error":"No output files — finalise first"}),400
     try:
@@ -1249,6 +1257,67 @@ def manual_redact(sid):
     return jsonify({"id":c.id,"text":c.text,"category":c.category.value,"status":c.status.value,
                     "confidence":c.confidence,"page_num":c.page_num,"x0":c.x0,"y0":c.y0,"x1":c.x1,"y1":c.y1,
                     "reason":c.reason,"source_file":c.source_file})
+
+# ── Failure triage: resolve / dismiss individual redaction failures ────────────
+@app.route("/api/sar/<sid>/failures/<cand_id>/resolve", methods=["POST"])
+@require_login
+def resolve_failure(sid, cand_id):
+    sar = _get(sid)
+    if not sar: return jsonify({"error": "Not found"}), 404
+    dismissed = (request.json or {}).get("dismissed", False)
+    failures = getattr(sar, "redaction_failures", [])
+    entry = next((f for f in failures if f["id"] == cand_id), None)
+    if entry is None:
+        # Idempotent: already removed
+        return jsonify({"ok": True, "note": "already resolved"})
+    sar.redaction_failures = [f for f in failures if f["id"] != cand_id]
+    sar.needs_refinalise = True
+    if dismissed:
+        # When dismissed, reject the candidate so re-finalise won't attempt it again
+        for c in sar.candidates:
+            if c.id == cand_id:
+                c.status = RedactionStatus.REJECTED
+                break
+    _save(sar)
+    if dismissed:
+        _audit("redaction_failure_dismissed", target=sid,
+               detail=f"{entry['text']!r} in {entry['source_file']} p{entry['page_num']+1}")
+    else:
+        _audit("redaction_failure_resolved", target=sid,
+               detail=f"{entry['text']!r} in {entry['source_file']} p{entry['page_num']+1}")
+    return jsonify({"ok": True})
+
+# ── Find text on page: returns bounding rects for highlighting ────────────────
+@app.route("/api/sar/<sid>/find-on-page")
+@require_login
+def find_on_page(sid):
+    sar = _get(sid)
+    if not sar: return jsonify({"error": "Not found"}), 404
+    filename = request.args.get("file", "")
+    try:
+        page_num = int(request.args.get("page", 0))
+    except (ValueError, TypeError):
+        page_num = 0
+    query = request.args.get("text", "")
+    if not filename or not query:
+        return jsonify({"rects": []})
+    pdf_path = next((p for p in sar.pdf_files if os.path.basename(p) == filename), None)
+    if not pdf_path or not os.path.exists(pdf_path):
+        return jsonify({"rects": []})
+    try:
+        import fitz as _fitz
+        doc = _fitz.open(pdf_path)
+        if page_num < 0 or page_num >= len(doc):
+            doc.close()
+            return jsonify({"rects": []})
+        page = doc[page_num]
+        hits = page.search_for(query, quads=False)
+        rects = [{"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1} for r in hits]
+        doc.close()
+    except Exception:
+        rects = []
+    return jsonify({"rects": rects})
+
 @app.route("/api/sar/<sid>/delete",methods=["POST"])
 @require_admin
 def delete_sar(sid):

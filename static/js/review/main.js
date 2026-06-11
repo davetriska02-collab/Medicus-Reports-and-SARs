@@ -330,7 +330,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       const result = await api.finalise(sarId);
       const failed = result?.failed_redactions || [];
       if (failed.length) {
-        alert(`WARNING: ${failed.length} approved redaction(s) could not be placed on the page and REMAIN VISIBLE in the output.\n\nThey are listed on the next screen and in the audit log — redact them manually before disclosure.`);
+        const ok = confirm(
+          `WARNING: ${failed.length} approved redaction(s) could not be placed and REMAIN VISIBLE in the output.\n\n` +
+          `Click OK to fix each one now — you will be taken directly to each location to draw a manual redaction box.\n\n` +
+          `Click Cancel to go to the completion page instead (failures are listed there).`
+        );
+        if (ok) {
+          window.location.href = `/review/${sarId}?fix=all`;
+          return;
+        }
       }
       window.location.href = '/complete/' + sarId;
     } catch (e) {
@@ -339,6 +347,140 @@ document.addEventListener('DOMContentLoaded', async () => {
       finaliseBtn.textContent = 'Finalise';
     }
   });
+
+  // ── Fix mode (guided triage of redaction failures) ─────────────────────────
+  const fixQueue = (window.REDACTION_FAILURES || []).slice();
+  let fixIdx = 0;
+
+  function fixEnterMode(startId) {
+    if (!fixQueue.length) return;
+    if (startId && startId !== 'all') {
+      const idx = fixQueue.findIndex(f => f.id === startId);
+      fixIdx = idx >= 0 ? idx : 0;
+    } else {
+      fixIdx = 0;
+    }
+    document.getElementById('fix-mode-banner').style.display = 'block';
+    fixShowCurrent();
+  }
+
+  async function fixShowCurrent() {
+    const f = fixQueue[fixIdx];
+    if (!f) { fixAllDone(); return; }
+    const total = fixQueue.length;
+    const titleEl  = document.getElementById('fix-banner-title');
+    const detailEl = document.getElementById('fix-banner-detail');
+    const ctxEl    = document.getElementById('fix-banner-context');
+    if (titleEl)  titleEl.textContent  = `Fixing failure ${fixIdx + 1} of ${total} — draw a redaction box over the text below`;
+    if (detailEl) detailEl.textContent = `"${f.text}" · ${f.source_file} · page ${f.page_num + 1}`;
+    if (ctxEl)    ctxEl.textContent    = f.context ? `Context: …${f.context}…` : '';
+
+    // Switch to correct file
+    if (f.source_file !== currentFile) {
+      currentFile = f.source_file;
+      if (fileSelect) fileSelect.value = currentFile;
+      await viewer.loadFile(currentFile);
+      updatePageIndicator();
+      buildPageNav();
+    }
+    // Jump to correct page
+    if (f.page_num !== viewer.currentPage) {
+      await goPage(f.page_num);
+    }
+    viewer.drawOverlay(cmgr.getAll());
+
+    // Enable draw mode
+    if (!drawEnabled) toggleDrawMode();
+
+    // Try to highlight text location via find-on-page
+    try {
+      const res = await fetch(
+        `/api/sar/${sarId}/find-on-page?file=${encodeURIComponent(f.source_file)}&page=${f.page_num}&text=${encodeURIComponent(f.text)}`
+      );
+      const d = await res.json();
+      if (d.rects && d.rects.length) {
+        flashRects(d.rects);
+      }
+    } catch {}
+  }
+
+  function flashRects(rects) {
+    const overlay = document.getElementById('redact-overlay');
+    if (!overlay) return;
+    const scaleX = viewer.canvas.width  / viewer._pdfW;
+    const scaleY = viewer.canvas.height / viewer._pdfH;
+    const flashes = rects.map(r => {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      el.setAttribute('x',      (r.x0 * scaleX).toFixed(1));
+      el.setAttribute('y',      (r.y0 * scaleY).toFixed(1));
+      el.setAttribute('width',  Math.max((r.x1 - r.x0) * scaleX, 4).toFixed(1));
+      el.setAttribute('height', Math.max((r.y1 - r.y0) * scaleY, 4).toFixed(1));
+      el.setAttribute('fill',   'none');
+      el.setAttribute('stroke', '#fbbf24');
+      el.setAttribute('stroke-width', '3');
+      el.setAttribute('rx', '2');
+      el.style.pointerEvents = 'none';
+      overlay.appendChild(el);
+      return el;
+    });
+    setTimeout(() => flashes.forEach(el => el.remove()), 4000);
+  }
+
+  window.fixNext = async () => {
+    fixIdx = Math.min(fixIdx + 1, fixQueue.length - 1);
+    await fixShowCurrent();
+  };
+  window.fixPrev = async () => {
+    fixIdx = Math.max(fixIdx - 1, 0);
+    await fixShowCurrent();
+  };
+  window.fixMarkDone = async () => {
+    const f = fixQueue[fixIdx];
+    if (!f) return;
+    try {
+      await fetch(`/api/sar/${sarId}/failures/${f.id}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {}
+    fixQueue.splice(fixIdx, 1);
+    if (fixIdx >= fixQueue.length) fixIdx = Math.max(0, fixQueue.length - 1);
+    if (!fixQueue.length) { fixAllDone(); return; }
+    await fixShowCurrent();
+  };
+  window.fixDismiss = async () => {
+    const f = fixQueue[fixIdx];
+    if (!f) return;
+    if (!confirm('Only dismiss if this text genuinely does not appear in the document. This is recorded in the audit log.\n\nAre you sure you want to dismiss this failure?')) return;
+    try {
+      await fetch(`/api/sar/${sarId}/failures/${f.id}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dismissed: true }),
+      });
+    } catch {}
+    fixQueue.splice(fixIdx, 1);
+    if (fixIdx >= fixQueue.length) fixIdx = Math.max(0, fixQueue.length - 1);
+    if (!fixQueue.length) { fixAllDone(); return; }
+    await fixShowCurrent();
+  };
+  window.fixExit = () => {
+    document.getElementById('fix-mode-banner').style.display = 'none';
+    if (drawEnabled) toggleDrawMode(); // turn draw mode back off
+  };
+
+  function fixAllDone() {
+    document.getElementById('fix-mode-banner').style.display = 'none';
+    document.getElementById('fix-done-toast').style.display = 'block';
+    if (drawEnabled) toggleDrawMode();
+  }
+
+  // Activate fix mode if URL has ?fix=...
+  const _urlFix = new URLSearchParams(window.location.search).get('fix');
+  if (_urlFix && fixQueue.length) {
+    // Wait for initial load to complete before entering fix mode
+    fixEnterMode(_urlFix);
+  }
 
   // ── Allocation / workflow ──────────────────────────────────────────────────
   window.allocateSar = async () => {

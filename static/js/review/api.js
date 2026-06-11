@@ -91,3 +91,13 @@ export const updateDetectionSettings = (sarId, settings) =>
 
 export const getPageCount = (sarId, filename) =>
   _json(`/api/sar/${sarId}/page-count/${encodeURIComponent(filename)}`);
+
+export const resolveFailure = (sarId, candId, dismissed = false) =>
+  _json(`/api/sar/${sarId}/failures/${candId}/resolve`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ dismissed }),
+  });
+
+export const findOnPage = (sarId, filename, page, text) =>
+  _json(`/api/sar/${sarId}/find-on-page?file=${encodeURIComponent(filename)}&page=${page}&text=${encodeURIComponent(text)}`);

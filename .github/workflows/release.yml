@@ -37,7 +37,7 @@ jobs:
           fi
 
       - name: Install build dependencies
-        run: pip install --quiet -r requirements.txt pytest
+        run: pip install --quiet -r requirements.txt pytest pyyaml
 
       # ── Gate: never publish a release that fails the test suite ─────────────
       - name: Run test suite
